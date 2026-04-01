@@ -1,19 +1,23 @@
-import { getBlockDefinition, type ModelGraph } from "@neural-playground/block-schema";
+import type { ModelGraph } from "@neural-playground/block-schema";
 
-export type ValidationIssue = {
-  code: string;
-  message: string;
-  nodeId?: string;
-  edgeId?: string;
-};
+import { validateEdge } from "./edge-validation";
+import { inferSequenceDimensions } from "./inference";
+import { createValidationIssue, type ValidationIssue, type ValidationMode } from "./issues";
+import { validateNodeConfig } from "./node-validation";
+import { validateTopology } from "./topology";
 
-export function createValidationIssue(code: string, message: string): ValidationIssue {
-  return { code, message };
-}
+export * from "./issues";
+export * from "./inference";
+export * from "./node-validation";
+export * from "./edge-validation";
+export * from "./topology";
 
-export function validateGraph(graph: ModelGraph): ValidationIssue[] {
+export function validateGraph(graph: ModelGraph, mode: ValidationMode = "playground-valid"): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const nodeIds = new Set(graph.nodes.map((node) => node.id));
+  const inferredSequenceDims = inferSequenceDimensions(graph);
+
+  issues.push(...validateTopology(graph, mode));
 
   const inputCount = graph.nodes.filter((node) => node.type === "Input").length;
   const outputCount = graph.nodes.filter((node) => node.type === "Output").length;
@@ -27,31 +31,7 @@ export function validateGraph(graph: ModelGraph): ValidationIssue[] {
   }
 
   for (const edge of graph.edges) {
-    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
-      issues.push({
-        code: "dangling_edge",
-        message: `Edge ${edge.id} references a missing node.`,
-        edgeId: edge.id
-      });
-      continue;
-    }
-
-    const sourceNode = graph.nodes.find((node) => node.id === edge.source);
-    const targetNode = graph.nodes.find((node) => node.id === edge.target);
-    if (!sourceNode || !targetNode) {
-      continue;
-    }
-
-    const sourceDef = getBlockDefinition(sourceNode.type);
-    const targetDef = getBlockDefinition(targetNode.type);
-    const compatible = sourceDef.outputs.some((shape) => targetDef.inputs.includes(shape));
-    if (!compatible) {
-      issues.push({
-        code: "shape_mismatch",
-        message: `${sourceNode.type} cannot connect to ${targetNode.type} with the current block signatures.`,
-        edgeId: edge.id
-      });
-    }
+    issues.push(...validateEdge(graph, edge, inferredSequenceDims, nodeIds));
   }
 
   for (const node of graph.nodes) {
@@ -73,6 +53,8 @@ export function validateGraph(graph: ModelGraph): ValidationIssue[] {
         nodeId: node.id
       });
     }
+
+    issues.push(...validateNodeConfig(node, inferredSequenceDims));
   }
 
   return issues;
