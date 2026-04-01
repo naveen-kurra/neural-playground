@@ -10,6 +10,12 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "check": "npm run check --workspaces --if-present",
-    "dev:web": "npm run dev --workspace @neural-playground/web"
+    "dev:web": "npm run dev --workspace @neural-playground/web",
+    "test": "vitest run",
+    "test:ui": "vitest --ui"
+  },
+  "devDependencies": {
+    "@vitest/ui": "^4.1.2",
+    "vitest": "^4.1.2"
   }
 }

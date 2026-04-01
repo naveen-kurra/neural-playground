@@ -11,6 +11,10 @@ type CanvasPanelProps = {
   draggingNodeId: string | null;
   pendingConnectionSourceId: string | null;
   connectionError: string;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   onCancelConnection: () => void;
   onShowTraining: () => void;
   onSelectNode: (nodeId: string) => void;
@@ -29,6 +33,10 @@ export function CanvasPanel(props: CanvasPanelProps) {
     draggingNodeId,
     pendingConnectionSourceId,
     connectionError,
+    canUndo,
+    canRedo,
+    onUndo,
+    onRedo,
     onCancelConnection,
     onShowTraining,
     onSelectNode,
@@ -46,6 +54,12 @@ export function CanvasPanel(props: CanvasPanelProps) {
           <h2>Model Canvas</h2>
         </div>
         <div className="canvas-actions">
+          <button type="button" className="ghost-button" onClick={onUndo} disabled={!canUndo} title="Undo (Cmd+Z)">
+            Undo
+          </button>
+          <button type="button" className="ghost-button" onClick={onRedo} disabled={!canRedo} title="Redo (Cmd+Shift+Z)">
+            Redo
+          </button>
           {pendingConnectionSourceId ? (
             <button type="button" className="ghost-button" onClick={onCancelConnection}>
               Cancel Connect
@@ -126,7 +140,7 @@ export function CanvasPanel(props: CanvasPanelProps) {
                 }}
               />
               <span className="block-category">{definition.category}</span>
-              <strong>{definition.label}</strong>
+              <strong>{node.name || definition.label}</strong>
               <span className="node-meta">{node.id}</span>
             </button>
           );

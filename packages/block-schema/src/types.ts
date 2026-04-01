@@ -30,6 +30,7 @@ export type BlockField = {
 export type BlockNode = {
   id: string;
   type: BlockType;
+  name?: string;
   position: {
     x: number;
     y: number;

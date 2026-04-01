@@ -1,6 +1,7 @@
 export type ValidationIssue = {
   code: string;
   message: string;
+  severity?: "error" | "warning";
   nodeId?: string;
   edgeId?: string;
 };
@@ -10,6 +11,6 @@ export type ValidationMode =
   | "pytorch-export-valid"
   | "decoder-training-valid";
 
-export function createValidationIssue(code: string, message: string): ValidationIssue {
-  return { code, message };
+export function createValidationIssue(code: string, message: string, severity: "error" | "warning" = "error"): ValidationIssue {
+  return { code, message, severity };
 }

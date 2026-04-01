@@ -5,11 +5,12 @@ type NodeInspectorProps = {
   node: BlockNode;
   definition: BlockDefinition;
   onChange: (nodeId: string, field: BlockField, rawValue: string) => void;
+  onRename: (nodeId: string, name: string) => void;
   onDelete: (nodeId: string) => void;
 };
 
 export function NodeInspector(props: NodeInspectorProps) {
-  const { node, definition, onChange, onDelete } = props;
+  const { node, definition, onChange, onRename, onDelete } = props;
 
   return (
     <section className="inspector-panel">
@@ -20,6 +21,15 @@ export function NodeInspector(props: NodeInspectorProps) {
       <p className="panel-copy">{definition.description}</p>
 
       <div className="form-stack">
+        <label className="field">
+          <span>Name</span>
+          <input
+            type="text"
+            placeholder={definition.label}
+            value={node.name ?? ""}
+            onChange={(event) => onRename(node.id, event.target.value)}
+          />
+        </label>
         {definition.fields.map((field) => {
           const value = node.config[field.key] ?? field.defaultValue;
           return (

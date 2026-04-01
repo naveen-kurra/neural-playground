@@ -426,6 +426,29 @@ input {
   color: #f0d8b4;
 }
 
+.issue-card--warning {
+  background: rgba(50, 45, 10, 0.85);
+  color: #f0e8a0;
+}
+
+.issue-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 6px;
+  width: fit-content;
+  background: rgba(220, 100, 40, 0.5);
+  color: #f0d8b4;
+}
+
+.issue-card--warning .issue-badge {
+  background: rgba(180, 160, 20, 0.45);
+  color: #f0e8a0;
+}
+
 pre {
   margin: 0;
   overflow: auto;

@@ -9,13 +9,24 @@ export function validateTopology(graph: ModelGraph, mode: ValidationMode): Valid
     issues.push(createValidationIssue("graph_cycle", "Graph contains a cycle, which is not supported."));
   }
 
-  if (mode === "playground-valid") {
-    return issues;
-  }
-
   const inputNodes = graph.nodes.filter((node) => node.type === "Input");
   const outputNodes = graph.nodes.filter((node) => node.type === "Output");
   const embeddingNodes = graph.nodes.filter((node) => node.type === "Embedding");
+
+  if (mode === "playground-valid") {
+    if (inputNodes.length > 1) {
+      issues.push(createValidationIssue("export_input_count", `PyTorch export requires exactly one Input node — found ${inputNodes.length}.`, "warning"));
+    }
+    if (outputNodes.length > 1) {
+      issues.push(createValidationIssue("export_output_count", `PyTorch export requires exactly one Output node — found ${outputNodes.length}.`, "warning"));
+    }
+    if (embeddingNodes.length === 0) {
+      issues.push(createValidationIssue("export_embedding_count", "PyTorch export requires an Embedding node.", "warning"));
+    } else if (embeddingNodes.length > 1) {
+      issues.push(createValidationIssue("export_embedding_count", `PyTorch export requires exactly one Embedding node — found ${embeddingNodes.length}.`, "warning"));
+    }
+    return issues;
+  }
 
   if (inputNodes.length !== 1) {
     issues.push(createValidationIssue("export_input_count", "Export requires exactly one Input node."));
