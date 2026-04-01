@@ -1,0 +1,15 @@
+{
+  "name": "@neural-playground/exporter-pytorch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@neural-playground/block-schema": "*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json"
+  }
+}

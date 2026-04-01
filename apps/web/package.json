@@ -1,0 +1,23 @@
+{
+  "name": "@neural-playground/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@neural-playground/block-schema": "*",
+    "@neural-playground/validator": "*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "check": "tsc -p tsconfig.json"
+  }
+}
