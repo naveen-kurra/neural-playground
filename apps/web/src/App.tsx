@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   blockDefinitions,
   getBlockDefinition,
@@ -22,6 +22,10 @@ type SelectedState =
 type ExportPreview = "json" | "pytorch" | null;
 type CopyStatus = "idle" | "json-copied" | "pytorch-copied" | "project-downloaded" | "copy-failed";
 type SafeExport<T> = { ok: true; value: T } | { ok: false; error: string };
+type ProjectDocument = {
+  version: 1;
+  graph: ModelGraph;
+};
 
 function defaultTrainingConfig(): TrainingConfig {
   return {
@@ -87,12 +91,14 @@ export function App() {
   const [connectionError, setConnectionError] = useState<string>("");
   const [exportPreview, setExportPreview] = useState<ExportPreview>(null);
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
+  const [projectStatus, setProjectStatus] = useState<string>("");
   const dragStateRef = useRef<{
     nodeId: string;
     pointerOffsetX: number;
     pointerOffsetY: number;
   } | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const loadInputRef = useRef<HTMLInputElement | null>(null);
 
   const graph: ModelGraph = useMemo(
     () => ({
@@ -105,6 +111,19 @@ export function App() {
 
   const issues = useMemo(() => validateGraph(graph), [graph]);
   const selectedNode = selected?.kind === "node" ? nodes.find((node) => node.id === selected.nodeId) ?? null : null;
+  const trainingWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    if (training.optimizer === "Custom" && !(training.optimizerCustomName ?? "").trim()) {
+      warnings.push("Custom optimizer selected but no optimizer name is provided.");
+    }
+    if (training.loss === "Custom" && !(training.lossCustomName ?? "").trim()) {
+      warnings.push("Custom loss selected but no loss name is provided.");
+    }
+    if (training.activation === "Custom" && !(training.activationCustomName ?? "").trim()) {
+      warnings.push("Custom activation selected but no activation name is provided.");
+    }
+    return warnings;
+  }, [training]);
   const exportedPyTorch = useMemo(() => {
     try {
       return exportModelGraphToPyTorch(graph);
@@ -115,6 +134,12 @@ export function App() {
 
   const exportedJson = useMemo(() => JSON.stringify(graph, null, 2), [graph]);
   const exportedProject = useMemo<SafeExport<ReturnType<typeof exportProjectFiles>>>(() => {
+    if (trainingWarnings.length > 0) {
+      return {
+        ok: false,
+        error: trainingWarnings[0]!
+      };
+    }
     try {
       return { ok: true, value: exportProjectFiles(graph) };
     } catch (error) {
@@ -123,7 +148,7 @@ export function App() {
         error: error instanceof Error ? error.message : "Unknown project export error"
       };
     }
-  }, [graph]);
+  }, [graph, trainingWarnings]);
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
@@ -171,6 +196,7 @@ export function App() {
     setNodes((current) => [...current, nextNode]);
     setSelected({ kind: "node", nodeId: nextNode.id });
     setConnectionError("");
+    setProjectStatus("");
   }
 
   function updateNodeConfig(nodeId: string, field: BlockField, rawValue: string) {
@@ -202,10 +228,12 @@ export function App() {
     setNodes((current) => current.filter((node) => node.id !== nodeId));
     setEdges((current) => current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
     setSelected({ kind: "training" });
+    setProjectStatus("");
   }
 
   function removeEdge(edgeId: string) {
     setEdges((current) => current.filter((edge) => edge.id !== edgeId));
+    setProjectStatus("");
   }
 
   function beginConnection(nodeId: string) {
@@ -285,6 +313,75 @@ export function App() {
     URL.revokeObjectURL(url);
   }
 
+  function saveProject() {
+    const document: ProjectDocument = {
+      version: 1,
+      graph
+    };
+    downloadTextFile("neural-playground.project.json", JSON.stringify(document, null, 2));
+    setProjectStatus("Project saved.");
+  }
+
+  function isGraphLike(value: unknown): value is ModelGraph {
+    if (!value || typeof value !== "object") {
+      return false;
+    }
+
+    const graphValue = value as Partial<ModelGraph>;
+    return Array.isArray(graphValue.nodes) && Array.isArray(graphValue.edges) && !!graphValue.training;
+  }
+
+  function validateProjectDocument(value: unknown): ProjectDocument {
+    if (!value || typeof value !== "object") {
+      throw new Error("Project file must be a JSON object.");
+    }
+
+    if (isGraphLike(value)) {
+      return {
+        version: 1,
+        graph: value
+      };
+    }
+
+    const doc = value as Partial<ProjectDocument>;
+    if (doc.version !== 1) {
+      throw new Error("Unsupported project version.");
+    }
+    if (!isGraphLike(doc.graph)) {
+      throw new Error("Project graph is incomplete.");
+    }
+
+    return {
+      version: 1,
+      graph: doc.graph
+    };
+  }
+
+  async function loadProjectFromFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const document = validateProjectDocument(parsed);
+      setNodes(document.graph.nodes);
+      setEdges(document.graph.edges);
+      setTraining(document.graph.training);
+      setSelected({ kind: "training" });
+      setPendingConnectionSourceId(null);
+      setConnectionError("");
+      setExportPreview(null);
+      setProjectStatus(`Loaded ${file.name}.`);
+    } catch (error) {
+      setProjectStatus(error instanceof Error ? error.message : "Failed to load project.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   async function copyText(contents: string, artifact: "json" | "pytorch") {
     try {
       await navigator.clipboard.writeText(contents);
@@ -339,11 +436,33 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar palette">
-        <div className="panel-header">
-          <p className="eyebrow">Neural Playground</p>
-          <h1>Block Library</h1>
+        <div className="panel-header row">
+          <div>
+            <p className="eyebrow">Neural Playground</p>
+            <h1>Block Library</h1>
+          </div>
+          <div className="canvas-actions">
+            <button type="button" className="ghost-button" onClick={saveProject}>
+              Save
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => loadInputRef.current?.click()}
+            >
+              Load
+            </button>
+          </div>
         </div>
+        <input
+          ref={loadInputRef}
+          className="hidden-file-input"
+          type="file"
+          accept=".json"
+          onChange={loadProjectFromFile}
+        />
         <p className="panel-copy">Add architecture pieces to the canvas and wire them into a graph.</p>
+        {projectStatus ? <p className="project-status">{projectStatus}</p> : null}
         <div className="block-grid">
           {blockDefinitions.map((definition) => (
             <button type="button" key={definition.type} className="block-card" onClick={() => addNode(definition.type)}>
@@ -581,7 +700,7 @@ export function App() {
             onDelete={removeNode}
           />
         ) : (
-          <TrainingInspector training={training} onChange={setTraining} />
+          <TrainingInspector training={training} warnings={trainingWarnings} onChange={setTraining} />
         )}
 
         <section className="issues-panel">
@@ -665,9 +784,10 @@ function NodeInspector(props: {
 
 function TrainingInspector(props: {
   training: TrainingConfig;
+  warnings: string[];
   onChange: (training: TrainingConfig) => void;
 }) {
-  const { training, onChange } = props;
+  const { training, warnings, onChange } = props;
 
   return (
     <section className="inspector-panel">
@@ -676,6 +796,11 @@ function TrainingInspector(props: {
         <h2>Training Config</h2>
       </div>
       <p className="panel-copy">These settings describe how the graph would be trained or exported later.</p>
+      {warnings.map((warning) => (
+        <p key={warning} className="training-warning">
+          {warning}
+        </p>
+      ))}
 
       <div className="form-stack">
         <label className="field">
