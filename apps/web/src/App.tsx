@@ -10,6 +10,8 @@ import {
   type ModelGraph,
   type TrainingConfig
 } from "@neural-playground/block-schema";
+import { exportModelGraphToPyTorch, exportProjectFiles } from "@neural-playground/exporter-pytorch";
+import JSZip from "jszip";
 import { validateGraph } from "@neural-playground/validator";
 
 type SelectedState =
@@ -17,12 +19,19 @@ type SelectedState =
   | { kind: "training" }
   | null;
 
+type ExportPreview = "json" | "pytorch" | null;
+type CopyStatus = "idle" | "json-copied" | "pytorch-copied" | "project-downloaded" | "copy-failed";
+type SafeExport<T> = { ok: true; value: T } | { ok: false; error: string };
+
 function defaultTrainingConfig(): TrainingConfig {
   return {
     optimizer: "AdamW",
     loss: "CrossEntropy",
     learningRate: 0.0003,
-    activation: "GELU"
+    activation: "GELU",
+    optimizerCustomName: "",
+    lossCustomName: "",
+    activationCustomName: ""
   };
 }
 
@@ -76,6 +85,8 @@ export function App() {
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [pendingConnectionSourceId, setPendingConnectionSourceId] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string>("");
+  const [exportPreview, setExportPreview] = useState<ExportPreview>(null);
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const dragStateRef = useRef<{
     nodeId: string;
     pointerOffsetX: number;
@@ -94,6 +105,25 @@ export function App() {
 
   const issues = useMemo(() => validateGraph(graph), [graph]);
   const selectedNode = selected?.kind === "node" ? nodes.find((node) => node.id === selected.nodeId) ?? null : null;
+  const exportedPyTorch = useMemo(() => {
+    try {
+      return exportModelGraphToPyTorch(graph);
+    } catch (error) {
+      return `# Export failed\n# ${error instanceof Error ? error.message : "Unknown export error"}`;
+    }
+  }, [graph]);
+
+  const exportedJson = useMemo(() => JSON.stringify(graph, null, 2), [graph]);
+  const exportedProject = useMemo<SafeExport<ReturnType<typeof exportProjectFiles>>>(() => {
+    try {
+      return { ok: true, value: exportProjectFiles(graph) };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unknown project export error"
+      };
+    }
+  }, [graph]);
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
@@ -238,6 +268,58 @@ export function App() {
     setConnectionError("");
   }
 
+  function preventFocusScroll(event: ReactPointerEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function downloadTextFile(filename: string, contents: string) {
+    const blob = new Blob([contents], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  async function copyText(contents: string, artifact: "json" | "pytorch") {
+    try {
+      await navigator.clipboard.writeText(contents);
+      setCopyStatus(artifact === "json" ? "json-copied" : "pytorch-copied");
+    } catch {
+      setCopyStatus("copy-failed");
+    }
+  }
+
+  async function downloadProjectArchive() {
+    if (!exportedProject.ok) {
+      setCopyStatus("copy-failed");
+      return;
+    }
+
+    try {
+      const zip = new JSZip();
+      for (const [path, contents] of Object.entries(exportedProject.value)) {
+        zip.file(path, contents);
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "neural-playground-export.zip";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setCopyStatus("project-downloaded");
+    } catch {
+      setCopyStatus("copy-failed");
+    }
+  }
+
   function startDraggingNode(event: ReactPointerEvent<HTMLButtonElement>, node: BlockNode) {
     if (!canvasRef.current) {
       return;
@@ -264,7 +346,7 @@ export function App() {
         <p className="panel-copy">Add architecture pieces to the canvas and wire them into a graph.</p>
         <div className="block-grid">
           {blockDefinitions.map((definition) => (
-            <button key={definition.type} className="block-card" onClick={() => addNode(definition.type)}>
+            <button type="button" key={definition.type} className="block-card" onClick={() => addNode(definition.type)}>
               <span className="block-category">{definition.category}</span>
               <strong>{definition.label}</strong>
               <span>{definition.description}</span>
@@ -282,11 +364,11 @@ export function App() {
             </div>
             <div className="canvas-actions">
               {pendingConnectionSourceId ? (
-                <button className="ghost-button" onClick={cancelPendingConnection}>
+                <button type="button" className="ghost-button" onClick={cancelPendingConnection}>
                   Cancel Connect
                 </button>
               ) : null}
-              <button className="ghost-button" onClick={() => setSelected({ kind: "training" })}>
+              <button type="button" className="ghost-button" onClick={() => setSelected({ kind: "training" })}>
                 Training Config
               </button>
             </div>
@@ -350,6 +432,7 @@ export function App() {
 
               return (
                 <button
+                  type="button"
                   key={node.id}
                   className={`canvas-node${isSelected ? " selected" : ""}${isDragging ? " dragging" : ""}`}
                   onClick={() => setSelected({ kind: "node", nodeId: node.id })}
@@ -363,16 +446,18 @@ export function App() {
                     className={`node-handle node-handle-in${
                       pendingConnectionSourceId && pendingConnectionSourceId !== node.id ? " active" : ""
                     }`}
-                    onPointerDown={(event) => event.stopPropagation()}
+                    onPointerDown={preventFocusScroll}
                     onClick={(event) => {
+                      event.preventDefault();
                       event.stopPropagation();
                       completeConnection(node.id);
                     }}
                   />
                   <span
                     className={`node-handle node-handle-out${pendingConnectionSourceId === node.id ? " active" : ""}`}
-                    onPointerDown={(event) => event.stopPropagation()}
+                    onPointerDown={preventFocusScroll}
                     onClick={(event) => {
+                      event.preventDefault();
                       event.stopPropagation();
                       beginConnection(node.id);
                     }}
@@ -403,7 +488,7 @@ export function App() {
                 <span>
                   {edge.source} → {edge.target}
                 </span>
-                <button className="inline-button" onClick={() => removeEdge(edge.id)}>
+                <button type="button" className="inline-button" onClick={() => removeEdge(edge.id)}>
                   Remove
                 </button>
               </div>
@@ -415,10 +500,75 @@ export function App() {
           <div className="panel-header row">
             <div>
               <p className="eyebrow">Export</p>
-              <h2>Graph JSON</h2>
+              <h2>Artifacts</h2>
             </div>
           </div>
-          <pre>{JSON.stringify(graph, null, 2)}</pre>
+          <div className="export-actions">
+            <div className="export-card">
+              <strong>Graph JSON</strong>
+              <span>Serialized graph, nodes, edges, and training configuration.</span>
+              <div className="export-buttons">
+                <button type="button" className="ghost-button" onClick={() => setExportPreview("json")}>
+                  View
+                </button>
+                <button type="button" className="ghost-button" onClick={() => copyText(exportedJson, "json")}>
+                  Copy
+                </button>
+                <button type="button" className="ghost-button" onClick={() => downloadTextFile("model-graph.json", exportedJson)}>
+                  Download
+                </button>
+              </div>
+            </div>
+
+            <div className="export-card">
+              <strong>PyTorch Model</strong>
+              <span>Generated `model.py` style export aligned to the current graph.</span>
+              <div className="export-buttons">
+                <button type="button" className="ghost-button" onClick={() => setExportPreview("pytorch")}>
+                  View
+                </button>
+                <button type="button" className="ghost-button" onClick={() => copyText(exportedPyTorch, "pytorch")}>
+                  Copy
+                </button>
+                <button type="button" className="ghost-button" onClick={() => downloadTextFile("model.py", exportedPyTorch)}>
+                  Download
+                </button>
+              </div>
+            </div>
+
+            <div className="export-card">
+              <strong>Full Project</strong>
+              <span>Downloads a reusable training project scaffold with generated `model.py` and config files.</span>
+              {!exportedProject.ok ? <span className="export-warning">Unavailable: {exportedProject.error}</span> : null}
+              <div className="export-buttons">
+                <button type="button" className="ghost-button" onClick={downloadProjectArchive} disabled={!exportedProject.ok}>
+                  Download Project
+                </button>
+              </div>
+            </div>
+          </div>
+          {copyStatus !== "idle" ? (
+            <p className={`copy-status${copyStatus === "copy-failed" ? " error" : ""}`}>
+              {copyStatus === "json-copied" ? "Graph JSON copied." : null}
+              {copyStatus === "pytorch-copied" ? "PyTorch model copied." : null}
+              {copyStatus === "project-downloaded" ? "Project archive downloaded." : null}
+              {copyStatus === "copy-failed" ? "Copy failed in this browser." : null}
+            </p>
+          ) : null}
+          {exportPreview ? (
+            <div className="export-preview">
+              <div className="panel-header row export-subheader">
+                <div>
+                  <p className="eyebrow">Preview</p>
+                  <h2>{exportPreview === "json" ? "Graph JSON" : "PyTorch Model"}</h2>
+                </div>
+                <button type="button" className="ghost-button" onClick={() => setExportPreview(null)}>
+                  Close
+                </button>
+              </div>
+              <pre>{exportPreview === "json" ? exportedJson : exportedPyTorch}</pre>
+            </div>
+          ) : null}
         </section>
       </main>
 
@@ -506,7 +656,7 @@ function NodeInspector(props: {
         <span>{definition.outputs.join(", ") || "none"}</span>
       </div>
 
-      <button className="danger-button" onClick={() => onDelete(node.id)}>
+      <button type="button" className="danger-button" onClick={() => onDelete(node.id)}>
         Delete Node
       </button>
     </section>
@@ -533,15 +683,39 @@ function TrainingInspector(props: {
           <select value={training.optimizer} onChange={(event) => onChange({ ...training, optimizer: event.target.value as TrainingConfig["optimizer"] })}>
             <option value="AdamW">AdamW</option>
             <option value="SGD">SGD</option>
+            <option value="Custom">Custom</option>
           </select>
         </label>
+        {training.optimizer === "Custom" ? (
+          <label className="field">
+            <span>Custom Optimizer Name</span>
+            <input
+              type="text"
+              value={training.optimizerCustomName ?? ""}
+              placeholder="my_optimizer"
+              onChange={(event) => onChange({ ...training, optimizerCustomName: event.target.value })}
+            />
+          </label>
+        ) : null}
 
         <label className="field">
           <span>Loss</span>
           <select value={training.loss} onChange={(event) => onChange({ ...training, loss: event.target.value as TrainingConfig["loss"] })}>
             <option value="CrossEntropy">CrossEntropy</option>
+            <option value="Custom">Custom</option>
           </select>
         </label>
+        {training.loss === "Custom" ? (
+          <label className="field">
+            <span>Custom Loss Name</span>
+            <input
+              type="text"
+              value={training.lossCustomName ?? ""}
+              placeholder="my_loss"
+              onChange={(event) => onChange({ ...training, lossCustomName: event.target.value })}
+            />
+          </label>
+        ) : null}
 
         <label className="field">
           <span>Activation</span>
@@ -552,8 +726,20 @@ function TrainingInspector(props: {
             <option value="GELU">GELU</option>
             <option value="ReLU">ReLU</option>
             <option value="SiLU">SiLU</option>
+            <option value="Custom">Custom</option>
           </select>
         </label>
+        {training.activation === "Custom" ? (
+          <label className="field">
+            <span>Custom Activation Name</span>
+            <input
+              type="text"
+              value={training.activationCustomName ?? ""}
+              placeholder="my_activation"
+              onChange={(event) => onChange({ ...training, activationCustomName: event.target.value })}
+            />
+          </label>
+        ) : null}
 
         <label className="field">
           <span>Learning Rate</span>

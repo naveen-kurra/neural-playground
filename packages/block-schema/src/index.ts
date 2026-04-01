@@ -56,10 +56,13 @@ export type BlockEdge = {
 };
 
 export type TrainingConfig = {
-  optimizer: "AdamW" | "SGD";
-  loss: "CrossEntropy";
+  optimizer: "AdamW" | "SGD" | "Custom";
+  optimizerCustomName?: string;
+  loss: "CrossEntropy" | "Custom";
+  lossCustomName?: string;
   learningRate: number;
-  activation: "GELU" | "ReLU" | "SiLU";
+  activation: "GELU" | "ReLU" | "SiLU" | "Custom";
+  activationCustomName?: string;
 };
 
 export type ModelGraph = {
@@ -228,4 +231,3 @@ export function getBlockDefinition(type: BlockType): BlockDefinition {
   }
   return definition;
 }
-
