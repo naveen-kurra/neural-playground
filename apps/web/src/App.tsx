@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   blockDefinitions,
   getBlockDefinition,
@@ -51,10 +51,6 @@ function fieldValueAsString(value: string | number | boolean): string {
   return String(value);
 }
 
-function connectionOptions(nodes: BlockNode[], currentNodeId: string): BlockNode[] {
-  return nodes.filter((node) => node.id !== currentNodeId);
-}
-
 function getNodeAnchor(node: BlockNode) {
   return {
     left: node.position.x,
@@ -77,8 +73,15 @@ export function App() {
   ]);
   const [training, setTraining] = useState<TrainingConfig>(defaultTrainingConfig);
   const [selected, setSelected] = useState<SelectedState>({ kind: "training" });
-  const [pendingSource, setPendingSource] = useState<string>("");
-  const [pendingTarget, setPendingTarget] = useState<string>("");
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [pendingConnectionSourceId, setPendingConnectionSourceId] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string>("");
+  const dragStateRef = useRef<{
+    nodeId: string;
+    pointerOffsetX: number;
+    pointerOffsetY: number;
+  } | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const graph: ModelGraph = useMemo(
     () => ({
@@ -92,10 +95,52 @@ export function App() {
   const issues = useMemo(() => validateGraph(graph), [graph]);
   const selectedNode = selected?.kind === "node" ? nodes.find((node) => node.id === selected.nodeId) ?? null : null;
 
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const dragState = dragStateRef.current;
+      const canvas = canvasRef.current;
+      if (!dragState || !canvas) {
+        return;
+      }
+
+      const bounds = canvas.getBoundingClientRect();
+      const nextX = event.clientX - bounds.left + canvas.scrollLeft - dragState.pointerOffsetX;
+      const nextY = event.clientY - bounds.top + canvas.scrollTop - dragState.pointerOffsetY;
+
+      setNodes((current) =>
+        current.map((node) =>
+          node.id === dragState.nodeId
+            ? {
+                ...node,
+                position: {
+                  x: Math.max(16, nextX),
+                  y: Math.max(16, nextY)
+                }
+              }
+            : node
+        )
+      );
+    }
+
+    function handlePointerUp() {
+      dragStateRef.current = null;
+      setDraggingNodeId(null);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, []);
+
   function addNode(type: BlockType) {
     const nextNode = createNode(type, nodes.length);
     setNodes((current) => [...current, nextNode]);
     setSelected({ kind: "node", nodeId: nextNode.id });
+    setConnectionError("");
   }
 
   function updateNodeConfig(nodeId: string, field: BlockField, rawValue: string) {
@@ -129,24 +174,84 @@ export function App() {
     setSelected({ kind: "training" });
   }
 
-  function addConnectionFromForm() {
-    if (!pendingSource || !pendingTarget || pendingSource === pendingTarget) {
+  function removeEdge(edgeId: string) {
+    setEdges((current) => current.filter((edge) => edge.id !== edgeId));
+  }
+
+  function beginConnection(nodeId: string) {
+    setConnectionError("");
+    setPendingConnectionSourceId(nodeId);
+  }
+
+  function completeConnection(targetNodeId: string) {
+    if (!pendingConnectionSourceId) {
       return;
     }
 
-    setEdges((current) => [
-      ...current,
-      {
-        id: `edge-${crypto.randomUUID().slice(0, 8)}`,
-        source: pendingSource,
-        target: pendingTarget
+    if (pendingConnectionSourceId === targetNodeId) {
+      setPendingConnectionSourceId(null);
+      setConnectionError("Source and target must be different blocks.");
+      return;
+    }
+
+    const sourceNode = nodes.find((node) => node.id === pendingConnectionSourceId);
+    const targetNode = nodes.find((node) => node.id === targetNodeId);
+    if (!sourceNode || !targetNode) {
+      setPendingConnectionSourceId(null);
+      setConnectionError("Connection failed because one of the blocks no longer exists.");
+      return;
+    }
+
+    const sourceDefinition = getBlockDefinition(sourceNode.type);
+    const targetDefinition = getBlockDefinition(targetNode.type);
+    const compatible = sourceDefinition.outputs.some((shape) => targetDefinition.inputs.includes(shape));
+    if (!compatible) {
+      setConnectionError(`${sourceDefinition.label} cannot connect to ${targetDefinition.label}.`);
+      setPendingConnectionSourceId(null);
+      return;
+    }
+
+    setEdges((current) => {
+      const alreadyExists = current.some(
+        (edge) => edge.source === pendingConnectionSourceId && edge.target === targetNodeId
+      );
+      if (alreadyExists) {
+        setConnectionError("That connection already exists.");
+        return current;
       }
-    ]);
-    setPendingTarget("");
+
+      return [
+        ...current,
+        {
+          id: `edge-${crypto.randomUUID().slice(0, 8)}`,
+          source: pendingConnectionSourceId,
+          target: targetNodeId
+        }
+      ];
+    });
+    setConnectionError("");
+    setPendingConnectionSourceId(null);
   }
 
-  function removeEdge(edgeId: string) {
-    setEdges((current) => current.filter((edge) => edge.id !== edgeId));
+  function cancelPendingConnection() {
+    setPendingConnectionSourceId(null);
+    setConnectionError("");
+  }
+
+  function startDraggingNode(event: ReactPointerEvent<HTMLButtonElement>, node: BlockNode) {
+    if (!canvasRef.current) {
+      return;
+    }
+
+    const nodeBounds = event.currentTarget.getBoundingClientRect();
+    dragStateRef.current = {
+      nodeId: node.id,
+      pointerOffsetX: event.clientX - nodeBounds.left,
+      pointerOffsetY: event.clientY - nodeBounds.top
+    };
+    setDraggingNodeId(node.id);
+    setSelected({ kind: "node", nodeId: node.id });
+    event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   return (
@@ -175,12 +280,28 @@ export function App() {
               <p className="eyebrow">Builder</p>
               <h2>Model Canvas</h2>
             </div>
-            <button className="ghost-button" onClick={() => setSelected({ kind: "training" })}>
-              Training Config
-            </button>
+            <div className="canvas-actions">
+              {pendingConnectionSourceId ? (
+                <button className="ghost-button" onClick={cancelPendingConnection}>
+                  Cancel Connect
+                </button>
+              ) : null}
+              <button className="ghost-button" onClick={() => setSelected({ kind: "training" })}>
+                Training Config
+              </button>
+            </div>
           </div>
 
-          <div className="canvas-grid">
+          {pendingConnectionSourceId ? (
+            <p className="connection-hint">
+              Connecting from <code>{pendingConnectionSourceId}</code>. Click an input handle on another block.
+            </p>
+          ) : (
+            <p className="connection-hint">Use the right handle to start a connection and the left handle to finish it.</p>
+          )}
+          {connectionError ? <p className="connection-error">{connectionError}</p> : null}
+
+          <div ref={canvasRef} className="canvas-grid">
             {nodes.length === 0 ? <p className="empty-canvas">Add blocks from the left panel to start building.</p> : null}
             <svg className="connection-overlay" aria-hidden="true">
               <defs>
@@ -225,17 +346,37 @@ export function App() {
             {nodes.map((node) => {
               const definition = getBlockDefinition(node.type);
               const isSelected = selected?.kind === "node" && selected.nodeId === node.id;
+              const isDragging = draggingNodeId === node.id;
 
               return (
                 <button
                   key={node.id}
-                  className={`canvas-node${isSelected ? " selected" : ""}`}
+                  className={`canvas-node${isSelected ? " selected" : ""}${isDragging ? " dragging" : ""}`}
                   onClick={() => setSelected({ kind: "node", nodeId: node.id })}
+                  onPointerDown={(event) => startDraggingNode(event, node)}
                   style={{
                     left: node.position.x,
                     top: node.position.y
                   }}
                 >
+                  <span
+                    className={`node-handle node-handle-in${
+                      pendingConnectionSourceId && pendingConnectionSourceId !== node.id ? " active" : ""
+                    }`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      completeConnection(node.id);
+                    }}
+                  />
+                  <span
+                    className={`node-handle node-handle-out${pendingConnectionSourceId === node.id ? " active" : ""}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      beginConnection(node.id);
+                    }}
+                  />
                   <span className="block-category">{definition.category}</span>
                   <strong>{definition.label}</strong>
                   <span className="node-meta">{node.id}</span>
@@ -253,27 +394,7 @@ export function App() {
             </div>
           </div>
 
-          <div className="connection-form">
-            <select value={pendingSource} onChange={(event) => setPendingSource(event.target.value)}>
-              <option value="">Source node</option>
-              {nodes.map((node) => (
-                <option key={node.id} value={node.id}>
-                  {node.type} ({node.id})
-                </option>
-              ))}
-            </select>
-
-            <select value={pendingTarget} onChange={(event) => setPendingTarget(event.target.value)}>
-              <option value="">Target node</option>
-              {connectionOptions(nodes, pendingSource).map((node) => (
-                <option key={node.id} value={node.id}>
-                  {node.type} ({node.id})
-                </option>
-              ))}
-            </select>
-
-            <button onClick={addConnectionFromForm}>Add Connection</button>
-          </div>
+          <p className="panel-copy">Connections are now created directly on the canvas using block handles.</p>
 
           <div className="edge-list">
             {edges.length === 0 ? <p className="muted">No connections yet.</p> : null}

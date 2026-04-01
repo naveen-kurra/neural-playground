@@ -45,6 +45,7 @@ button {
 .sidebar,
 .workspace {
   padding: 24px;
+  min-height: 0;
 }
 
 .sidebar {
@@ -56,6 +57,19 @@ button {
   display: grid;
   grid-template-rows: minmax(420px, 1fr) auto auto;
   gap: 18px;
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.inspector {
+  overflow: auto;
 }
 
 .panel-header {
@@ -97,8 +111,12 @@ button {
 }
 
 .block-grid {
+  flex: 1;
   display: grid;
   gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
 }
 
 .block-card,
@@ -153,6 +171,29 @@ button {
   padding: 18px;
 }
 
+.canvas-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.connection-hint {
+  margin: 0 0 14px;
+  color: #b8c4d6;
+  font-size: 0.92rem;
+}
+
+.connection-error {
+  margin: -4px 0 14px;
+  color: #ffb7b0;
+  font-size: 0.92rem;
+}
+
+.connection-hint code {
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(18, 32, 52, 0.96);
+}
+
 .canvas-grid {
   position: relative;
   min-height: 460px;
@@ -193,11 +234,43 @@ button {
   color: #e7ecf3;
   text-align: left;
   box-shadow: 0 10px 24px rgba(2, 8, 15, 0.28);
+  cursor: grab;
+  user-select: none;
 }
 
 .canvas-node.selected {
   border-color: rgba(116, 204, 255, 0.9);
   box-shadow: 0 0 0 1px rgba(116, 204, 255, 0.4);
+}
+
+.canvas-node.dragging {
+  cursor: grabbing;
+  z-index: 2;
+}
+
+.node-handle {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #76c1ff;
+  border-radius: 999px;
+  background: #08111c;
+  transform: translateY(-50%);
+  box-shadow: 0 0 0 3px rgba(118, 193, 255, 0.12);
+}
+
+.node-handle.active {
+  background: #76c1ff;
+  box-shadow: 0 0 0 5px rgba(118, 193, 255, 0.18);
+}
+
+.node-handle-in {
+  left: -8px;
+}
+
+.node-handle-out {
+  right: -8px;
 }
 
 .node-meta {
@@ -209,13 +282,6 @@ button {
   margin: 0;
   padding: 24px;
   color: #95a9c8;
-}
-
-.connection-form {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
 }
 
 .connection-form select,
@@ -326,7 +392,7 @@ pre {
     order: 3;
   }
 
-  .connection-form {
-    grid-template-columns: 1fr;
+  .canvas-actions {
+    flex-wrap: wrap;
   }
 }
