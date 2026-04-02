@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchHuggingFaceModelViaService, type HuggingFaceFetchResult } from "../app/huggingface";
 import { downloadTextFile } from "../app/file-utils";
 import { buildPruningManifest, buildUpdatedConfig, buildWeightRemapScript } from "../app/pruning-artifacts";
@@ -11,6 +11,11 @@ type PrunePageProps = {
 
 type ModelFamily = "auto" | "gpt2" | "llama" | "unknown";
 type PrunePreset = "none" | "drop-last-4" | "drop-last-8" | "keep-every-other" | "keep-first-half";
+type RunLogItem = {
+  id: number;
+  receivedAt: number;
+  event: PruneServiceLogEvent;
+};
 
 export function PrunePage(props: PrunePageProps) {
   const { onBackToBuilder } = props;
@@ -27,8 +32,10 @@ export function PrunePage(props: PrunePageProps) {
   const [runState, setRunState] = useState<"idle" | "checking" | "running" | "success" | "error">("idle");
   const [runError, setRunError] = useState("");
   const [runResult, setRunResult] = useState<RunLocalPruneResult | null>(null);
-  const [runLogs, setRunLogs] = useState<PruneServiceLogEvent[]>([]);
+  const [runLogs, setRunLogs] = useState<RunLogItem[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<PrunePreset>("none");
+  const runLogSeqRef = useRef(0);
+  const logsContainerRef = useRef<HTMLDivElement | null>(null);
 
   const keptLayerCount = useMemo(() => Math.max(1, Math.floor(layerCount)), [layerCount]);
   const configKeys = useMemo(() => Object.keys(fetchedModel?.config ?? {}).sort(), [fetchedModel]);
@@ -107,6 +114,28 @@ export function PrunePage(props: PrunePageProps) {
     }
     return "Ready to prune the detected transformer block stack.";
   }, [fetchedModel, hasDetectedPrunableStack, outputDir, keptLayerIndices.length]);
+  const fetchStatusLabel = useMemo(() => {
+    if (fetchState === "loading") {
+      return "Fetching metadata";
+    }
+    if (fetchState === "success") {
+      return "Ready";
+    }
+    if (fetchState === "error") {
+      return "Failed";
+    }
+    return "Not fetched";
+  }, [fetchState]);
+  const runButtonLabel = runState === "checking" ? "Checking Service..." : runState === "running" ? "Pruning..." : "Run Local Prune";
+  const firstLogReceivedAt = runLogs[0]?.receivedAt ?? null;
+
+  useEffect(() => {
+    const container = logsContainerRef.current;
+    if (!container) {
+      return;
+    }
+    container.scrollTop = container.scrollHeight;
+  }, [runLogs.length]);
 
   async function handleFetchModel() {
     try {
@@ -133,6 +162,7 @@ export function PrunePage(props: PrunePageProps) {
       setRunResult(null);
       setRunError("");
       setRunLogs([]);
+      runLogSeqRef.current = 0;
     } catch (error) {
       setFetchedModel(null);
       setFetchState("error");
@@ -169,6 +199,36 @@ export function PrunePage(props: PrunePageProps) {
     setLayerCount(Math.max(1, availableLayerIndices.length - nextDropped.length));
   }
 
+  function clearDroppedLayers() {
+    if (availableLayerIndices.length === 0) {
+      return;
+    }
+    setSelectedPreset("none");
+    setDroppedLayerIndices([]);
+    setLayerCount(Math.max(1, availableLayerIndices.length));
+  }
+
+  function dropAllLayers() {
+    if (availableLayerIndices.length === 0) {
+      return;
+    }
+    setSelectedPreset("none");
+    setDroppedLayerIndices([...availableLayerIndices]);
+    setLayerCount(1);
+  }
+
+  function clearRunLogs() {
+    setRunLogs([]);
+    runLogSeqRef.current = 0;
+  }
+
+  function formatLogOffset(receivedAt: number): string {
+    if (!firstLogReceivedAt) {
+      return "0.0s";
+    }
+    return `${((receivedAt - firstLogReceivedAt) / 1000).toFixed(1)}s`;
+  }
+
   function downloadPruningArtifacts() {
     if (!pruningManifest || !updatedConfig) {
       return;
@@ -191,6 +251,7 @@ export function PrunePage(props: PrunePageProps) {
       setRunError("");
       setRunResult(null);
       setRunLogs([]);
+      runLogSeqRef.current = 0;
 
       const serviceHealthy = await checkPruneServiceHealth();
       if (!serviceHealthy) {
@@ -208,7 +269,8 @@ export function PrunePage(props: PrunePageProps) {
         layerCountKey: fetchedModel.inspection.layerCountKey ?? undefined,
         strategy: "drop"
       }, (event) => {
-        setRunLogs((current) => [...current, event]);
+        const id = runLogSeqRef.current++;
+        setRunLogs((current) => [...current, { id, receivedAt: Date.now(), event }]);
       });
       setRunResult(result);
       setRunState("success");
@@ -229,7 +291,7 @@ export function PrunePage(props: PrunePageProps) {
             model class workflow.
           </p>
         </div>
-        <div className="canvas-actions">
+        <div className="tool-header-actions">
           <button type="button" className="ghost-button" onClick={onBackToBuilder}>
             Back To Builder
           </button>
@@ -237,7 +299,7 @@ export function PrunePage(props: PrunePageProps) {
       </header>
 
       <div className="prune-layout">
-        <section className="canvas-panel">
+        <section className="canvas-panel prune-panel">
           <div className="panel-header">
             <p className="eyebrow">Import</p>
             <h2>Model Source</h2>
@@ -266,7 +328,8 @@ export function PrunePage(props: PrunePageProps) {
               rewrites.
             </p>
             <button type="button" className="ghost-button" onClick={handleFetchModel} disabled={fetchState === "loading"}>
-              {fetchState === "loading" ? "Fetching..." : "Fetch Model Metadata"}
+              {fetchState === "loading" ? <span className="inline-spinner" aria-hidden="true" /> : null}
+              {fetchState === "loading" ? "Fetching metadata..." : "Fetch Model Metadata"}
             </button>
           </div>
           {fetchError ? (
@@ -276,8 +339,14 @@ export function PrunePage(props: PrunePageProps) {
             </div>
           ) : null}
           {fetchedModel ? (
-            <div className="prune-result">
-              <strong>Resolved Model</strong>
+            <div className="prune-result prune-kv">
+              <div className="prune-result-header">
+                <strong>Resolved Model</strong>
+                <span className={`prune-badge ${fetchedModel.inspection.broadPruningSupported ? "success" : "warning"}`}>
+                  {fetchedModel.inspection.broadPruningSupported ? "Likely supported" : "Needs review"}
+                </span>
+              </div>
+              <strong>Model ID</strong>
               <span>{fetchedModel.modelId}</span>
               <strong>Detected Family</strong>
               <span>{fetchedModel.resolvedFamily}</span>
@@ -315,7 +384,7 @@ export function PrunePage(props: PrunePageProps) {
           ) : null}
         </section>
 
-        <section className="canvas-panel">
+        <section className="canvas-panel prune-panel">
           <div className="panel-header">
             <p className="eyebrow">Plan</p>
             <h2>Transformer Block Pruning</h2>
@@ -370,23 +439,37 @@ export function PrunePage(props: PrunePageProps) {
             </label>
           </div>
           {availableLayerIndices.length > 0 ? (
-            <div className="layer-picker">
-              {availableLayerIndices.map((layerIndex) => {
-                const dropped = droppedLayerIndices.includes(layerIndex);
-                return (
-                  <button
-                    type="button"
-                    key={layerIndex}
-                    className={`layer-chip ${dropped ? "dropped" : "kept"}`}
-                    onClick={() => toggleLayer(layerIndex)}
-                  >
-                    {dropped ? "Drop" : "Keep"} L{layerIndex}
-                  </button>
-                );
-              })}
+            <>
+              <div className="layer-picker-header">
+                <span>{availableLayerIndices.length} total · {droppedLayerIndices.length} dropped · {keptLayerIndices.length} kept</span>
+                <div className="layer-picker-actions">
+                  <button type="button" className="inline-button" onClick={clearDroppedLayers}>Clear All</button>
+                  <button type="button" className="inline-button" onClick={dropAllLayers}>Drop All</button>
+                </div>
+              </div>
+              <div className="layer-picker">
+                {availableLayerIndices.map((layerIndex) => {
+                  const dropped = droppedLayerIndices.includes(layerIndex);
+                  return (
+                    <button
+                      type="button"
+                      key={layerIndex}
+                      className={`layer-chip ${dropped ? "dropped" : "kept"}`}
+                      onClick={() => toggleLayer(layerIndex)}
+                    >
+                      {dropped ? "Drop" : "Keep"} L{layerIndex}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="prune-empty-state">
+              <strong>No layers loaded yet</strong>
+              <span>Fetch model metadata to view and toggle layer chips.</span>
             </div>
-          ) : null}
-          <div className="prune-summary">
+          )}
+          <div className="prune-summary prune-kv">
             <strong>Current Scope</strong>
             <span>Whole transformer block removal only. Embeddings, heads, and non-block modules are preserved.</span>
             <strong>Output Artifacts</strong>
@@ -400,7 +483,7 @@ export function PrunePage(props: PrunePageProps) {
             <strong>Kept Layers</strong>
             <span>{keptLayerIndices.length > 0 ? keptLayerIndices.slice(0, 12).join(", ") : "None"}{keptLayerIndices.length > 12 ? " ..." : ""}</span>
             <strong>Fetch Status</strong>
-            <span>{fetchState}</span>
+            <span>{fetchStatusLabel}</span>
             <strong>Readiness</strong>
             <span>{pruningReadinessMessage}</span>
           </div>
@@ -415,13 +498,16 @@ export function PrunePage(props: PrunePageProps) {
             </button>
             <button
               type="button"
-              className="ghost-button"
+              className="danger-button"
               onClick={handleRunLocalPrune}
               disabled={!canRunLocalPrune}
             >
-              {runState === "checking" ? "Checking Service..." : runState === "running" ? "Pruning..." : "Run Local Prune"}
+              {runButtonLabel}
             </button>
           </div>
+          {canRunLocalPrune && droppedLayerIndices.length > 0 ? (
+            <p className="prune-run-warning">About to drop {droppedLayerIndices.length} layers from {fetchedModel!.modelId}. This writes files to disk and cannot be undone.</p>
+          ) : null}
           {runError ? (
             <div className="prune-result">
               <strong>Local Prune Error</strong>
@@ -430,7 +516,7 @@ export function PrunePage(props: PrunePageProps) {
           ) : null}
           {runResult?.validation.ok ? <p className="project-status">Pruned model validated successfully.</p> : null}
           {runResult ? (
-            <div className="prune-result">
+            <div className="prune-result prune-kv">
               <strong>Prune Output</strong>
               <span>{runResult.outputDir}</span>
               <strong>Model Source</strong>
@@ -503,37 +589,59 @@ export function PrunePage(props: PrunePageProps) {
           ) : null}
         </section>
 
-        <section className="issues-panel">
-          <div className="panel-header">
-            <p className="eyebrow">Progress</p>
-            <h2>Pruning Progress</h2>
-          </div>
-          {runLogs.length === 0 ? <p className="muted">Run a prune job to see backend progress logs here.</p> : null}
-          {runLogs.map((entry, index) => (
-            <div key={`${entry.stage}-${index}`} className="issue-card warning">
-              <div className="issue-header">
-                <strong>{entry.stage}</strong>
-              </div>
-              <span>{entry.message}</span>
+        <section className="issues-panel prune-panel">
+          <div className="panel-header row">
+            <div>
+              <p className="eyebrow">Progress</p>
+              <h2>Pruning Progress</h2>
             </div>
-          ))}
-          {runLogs.length > 0 ? <p className="muted">Latest log count: {runLogs.length}</p> : null}
+            {runLogs.length > 0 ? (
+              <button type="button" className="inline-button" onClick={clearRunLogs}>
+                Clear
+              </button>
+            ) : null}
+          </div>
+          {runLogs.length === 0 ? (
+            <div className="prune-empty-state">
+              <strong>No prune run yet</strong>
+              <span>Run local prune to stream backend progress logs here.</span>
+            </div>
+          ) : null}
+          <div className="prune-log-list" ref={logsContainerRef}>
+            {runLogs.map((entry) => (
+              <div key={entry.id} className="prune-log-entry">
+                <div className="prune-log-header">
+                  <strong>{entry.event.stage}</strong>
+                  <span className="prune-log-time">{formatLogOffset(entry.receivedAt)}</span>
+                </div>
+                <p>{entry.event.message}</p>
+              </div>
+            ))}
+          </div>
+          {runLogs.length > 0 ? <p className="muted">Log entries: {runLogs.length}</p> : null}
         </section>
 
-        <section className="issues-panel">
+        <section className="issues-panel prune-panel">
           <div className="panel-header">
             <p className="eyebrow">Remap</p>
             <h2>Layer Remap Preview</h2>
           </div>
-          {layerRemap.length === 0 ? <p className="muted">Fetch a model and keep at least one layer to preview the remap.</p> : null}
-          {layerRemap.slice(0, 16).map((entry) => (
-            <div key={`${entry.newIndex}-${entry.oldIndex}`} className="issue-card warning">
-              <div className="issue-header">
-                <strong>New Layer {entry.newIndex}</strong>
-              </div>
-              <span>Copies weights from original layer {entry.oldIndex}.</span>
+          {layerRemap.length === 0 ? (
+            <div className="prune-empty-state">
+              <strong>No remap yet</strong>
+              <span>Fetch a model and keep at least one layer to preview remapped indices.</span>
             </div>
-          ))}
+          ) : null}
+          <div className="prune-remap-list">
+            {layerRemap.slice(0, 16).map((entry) => (
+              <div key={`${entry.newIndex}-${entry.oldIndex}`} className="prune-remap-entry">
+                <div className="prune-log-header">
+                  <strong>New Layer {entry.newIndex}</strong>
+                </div>
+                <p>Copies weights from original layer {entry.oldIndex}.</p>
+              </div>
+            ))}
+          </div>
           {layerRemap.length > 16 ? <p className="muted">Showing first 16 remap entries of {layerRemap.length}.</p> : null}
         </section>
       </div>
