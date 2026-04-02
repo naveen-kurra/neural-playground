@@ -527,7 +527,7 @@ export const blockDefinitions: BlockDefinition[] = [
     type: "LlamaBlock",
     label: "LLaMA Block",
     category: "transformer",
-    description: "LLaMA decoder block with RMSNorm, RoPE attention, and gated MLP.",
+    description: "LLaMA decoder block with RMSNorm, RoPE attention, and configurable feedforward path.",
     inputs: ["sequence"],
     outputs: ["sequence"],
     inputContracts: [
@@ -586,6 +586,31 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         key: "ffnHidden",
         label: "Intermediate Size",
+        type: "number",
+        defaultValue: 11008
+      },
+      {
+        key: "feedforwardType",
+        label: "Feedforward",
+        type: "select",
+        defaultValue: "mlp",
+        options: ["mlp", "moe"]
+      },
+      {
+        key: "numExperts",
+        label: "Experts",
+        type: "number",
+        defaultValue: 8
+      },
+      {
+        key: "topK",
+        label: "Top-K",
+        type: "number",
+        defaultValue: 2
+      },
+      {
+        key: "expertHidden",
+        label: "Expert Hidden",
         type: "number",
         defaultValue: 11008
       },

@@ -1,4 +1,5 @@
 import type { ModelGraph } from "@neural-playground/block-schema";
+import { isCustomizedGpt2Block, isCustomizedLlamaBlock } from "./customization";
 import { buildGPT2ArchitectureSpec, type GPT2ConfigInput } from "./gpt2";
 import { buildLlamaArchitectureSpec, type LlamaConfigInput } from "./llama";
 import type { GPT2ArchitectureSpec, HybridDecoderArchitectureSpec, LlamaArchitectureSpec } from "./types";
@@ -118,23 +119,7 @@ function mapExactGpt2ProjectionToIr(graph: ModelGraph, ordered: ModelGraph["node
 
   const hiddenSize = Number(tokenEmbedding.config.embeddingDim ?? 768);
   const firstBlock = blocks[0];
-  const hasCustomBlockConfig = blocks.some((block) => {
-    const feedforwardType = String(block.config.feedforwardType ?? "mlp");
-    const activation = String(block.config.activation ?? "gelu_new");
-    const layerNormEpsilon = Number(block.config.layerNormEpsilon ?? 1e-5);
-    const scaleAttnWeights = Boolean(block.config.scaleAttnWeights ?? true);
-    const scaleByLayer = Boolean(block.config.scaleAttnByInverseLayerIdx ?? false);
-    const reorder = Boolean(block.config.reorderAndUpcastAttn ?? false);
-    return (
-      feedforwardType !== "mlp" ||
-      activation !== "gelu_new" ||
-      layerNormEpsilon !== 1e-5 ||
-      scaleAttnWeights !== true ||
-      scaleByLayer !== false ||
-      reorder !== false
-    );
-  });
-  if (hasCustomBlockConfig) {
+  if (blocks.some(isCustomizedGpt2Block)) {
     throw new Error("Customized GPT-2 block internals are exported through the hybrid path.");
   }
 
@@ -382,6 +367,9 @@ export function mapModelGraphToLlamaIr(graph: ModelGraph): LlamaArchitectureSpec
 
   const hiddenSize = Number(embeddingNode.config.embeddingDim ?? 4096);
   const firstBlock = blocks[0];
+  if (blocks.some(isCustomizedLlamaBlock)) {
+    throw new Error("Customized LLaMA block internals are exported through the hybrid path.");
+  }
 
   return buildLlamaArchitectureSpec({
     name: "LLaMA (exact canvas)",
@@ -392,9 +380,9 @@ export function mapModelGraphToLlamaIr(graph: ModelGraph): LlamaArchitectureSpec
     numAttentionHeads: Number(firstBlock?.config.numHeads ?? 32),
     numKeyValueHeads: Number(firstBlock?.config.numKeyValueHeads ?? firstBlock?.config.numHeads ?? 32),
     headDim: Number(firstBlock?.config.headDim ?? Math.floor(hiddenSize / Number(firstBlock?.config.numHeads ?? 32))),
-    hiddenActivation: normalizeActivationName(graph.training.activation),
+    hiddenActivation: String(firstBlock?.config.activation ?? normalizeActivationName(graph.training.activation)),
     maxPositionEmbeddings: Number(inputNode.config.sequenceLength ?? 2048),
-    rmsNormEpsilon: Number(finalNormNode.config.epsilon ?? 1e-6),
+    rmsNormEpsilon: Number(firstBlock?.config.rmsNormEpsilon ?? finalNormNode.config.epsilon ?? 1e-6),
     ropeTheta: Number(firstBlock?.config.ropeTheta ?? 10000),
     attentionBias: Boolean(firstBlock?.config.attentionBias ?? false),
     attentionDropout: Number(firstBlock?.config.dropout ?? 0),
@@ -498,6 +486,10 @@ export function mapModelGraphToHybridIr(graph: ModelGraph): HybridDecoderArchite
       rmsNormEpsilon: Number(node.config.rmsNormEpsilon ?? 1e-6),
       ropeTheta: Number(node.config.ropeTheta ?? 10000),
       activation: String(node.config.activation ?? "silu"),
+      feedforwardType: String(node.config.feedforwardType ?? "mlp") === "moe" ? ("moe" as const) : ("mlp" as const),
+      numExperts: Number(node.config.numExperts ?? 8),
+      topK: Number(node.config.topK ?? 2),
+      expertHidden: Number(node.config.expertHidden ?? node.config.ffnHidden ?? hiddenSize * 4),
       attentionBias: Boolean(node.config.attentionBias ?? false),
       attentionDropout: Number(node.config.dropout ?? 0),
       mlpBias: Boolean(node.config.mlpBias ?? false),
@@ -653,6 +645,10 @@ export function projectLlamaIrToModelGraph(spec: LlamaArchitectureSpec): ModelGr
       numKeyValueHeads: spec.config.numKeyValueHeads,
       headDim: spec.config.headDim,
       ffnHidden: spec.config.intermediateSize,
+      feedforwardType: "mlp",
+      numExperts: 8,
+      topK: 2,
+      expertHidden: spec.config.intermediateSize,
       ropeTheta: spec.config.ropeTheta,
       rmsNormEpsilon: spec.config.rmsNormEpsilon,
       activation: spec.config.hiddenActivation,

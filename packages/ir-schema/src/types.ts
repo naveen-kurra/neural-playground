@@ -269,6 +269,10 @@ export type HybridBlockOp =
       rmsNormEpsilon: number;
       ropeTheta: number;
       activation: string;
+      feedforwardType: "mlp" | "moe";
+      numExperts: number;
+      topK: number;
+      expertHidden: number;
       attentionBias: boolean;
       attentionDropout: number;
       mlpBias: boolean;

@@ -22,6 +22,15 @@ export function NodeInspector(props: NodeInspectorProps) {
       }
     }
 
+    if (node.type === "LlamaBlock") {
+      if (field.key === "ffnHidden") {
+        return feedforwardType !== "moe";
+      }
+      if (field.key === "numExperts" || field.key === "topK" || field.key === "expertHidden") {
+        return feedforwardType === "moe";
+      }
+    }
+
     return true;
   });
 

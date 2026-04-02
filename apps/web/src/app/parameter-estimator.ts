@@ -7,6 +7,16 @@ import {
   type HybridDecoderArchitectureSpec,
   type LlamaArchitectureSpec
 } from "@neural-playground/ir-schema";
+import {
+  countEmbedding,
+  countGpt2Attention,
+  countGpt2Mlp,
+  countLayerNorm,
+  countLlamaAttention,
+  countLlamaMlp,
+  countTopKExperts,
+  countTopKRouter
+} from "./parameter-estimator-helpers";
 
 function num(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -87,35 +97,42 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
       case "LlamaTokenEmbedding": {
         vocabSize = num(node.config.vocabSize, vocabSize);
         hiddenSize = num(node.config.embeddingDim, hiddenSize);
-        parameterCount += vocabSize * hiddenSize;
+        parameterCount += countEmbedding(vocabSize, hiddenSize);
         break;
       }
       case "GPT2PositionEmbedding": {
         const seqLen = num(node.config.sequenceLength, 1024);
         const dim = num(node.config.embeddingDim, hiddenSize);
-        parameterCount += seqLen * dim;
+        parameterCount += countEmbedding(seqLen, dim);
         break;
       }
       case "TransformerBlock": {
         const dModel = num(node.config.dModel, hiddenSize);
-        parameterCount += 4 * dModel * dModel + 4 * dModel;
-        parameterCount += 2 * dModel;
+        parameterCount += countGpt2Attention(dModel);
+        parameterCount += countLayerNorm(dModel);
         hiddenSize = dModel;
         break;
       }
       case "MoE": {
         const expertHidden = num(node.config.expertHidden, hiddenSize * 4);
         const numExperts = num(node.config.numExperts, 8);
-        parameterCount += hiddenSize * numExperts + numExperts;
-        parameterCount += numExperts * (2 * hiddenSize * expertHidden + (expertHidden + hiddenSize));
+        parameterCount += countTopKRouter(hiddenSize, numExperts);
+        parameterCount += countTopKExperts(hiddenSize, expertHidden, numExperts, "gpt2");
         break;
       }
       case "GPT2Block": {
         const dModel = num(node.config.dModel, hiddenSize);
         const ffnHidden = num(node.config.ffnHidden, dModel * 4);
-        parameterCount += 4 * dModel * dModel + 4 * dModel;
-        parameterCount += 2 * dModel * ffnHidden + (ffnHidden + dModel);
-        parameterCount += 4 * dModel;
+        parameterCount += countGpt2Attention(dModel);
+        if (String(node.config.feedforwardType ?? "mlp") === "moe") {
+          const expertHidden = num(node.config.expertHidden, ffnHidden);
+          const numExperts = num(node.config.numExperts, 8);
+          parameterCount += countTopKRouter(dModel, numExperts);
+          parameterCount += countTopKExperts(dModel, expertHidden, numExperts, "gpt2");
+        } else {
+          parameterCount += countGpt2Mlp(dModel, ffnHidden);
+        }
+        parameterCount += countLayerNorm(dModel) * 2;
         hiddenSize = dModel;
         break;
       }
@@ -124,18 +141,24 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
         const numHeads = num(node.config.numHeads, 32);
         const numKvHeads = num(node.config.numKeyValueHeads, numHeads);
         const headDim = num(node.config.headDim, Math.floor(dModel / Math.max(1, numHeads)));
+        const feedforwardType = String(node.config.feedforwardType ?? "mlp");
         const ffnHidden = num(node.config.ffnHidden, dModel * 4);
-        parameterCount += dModel * (numHeads * headDim);
-        parameterCount += dModel * (numKvHeads * headDim) * 2;
-        parameterCount += dModel * (numHeads * headDim);
-        parameterCount += dModel * ffnHidden * 2 + ffnHidden * dModel;
-        parameterCount += 2 * dModel;
+        parameterCount += countLlamaAttention(dModel, numHeads, numKvHeads, headDim, Boolean(node.config.attentionBias ?? false));
+        if (feedforwardType === "moe") {
+          const expertHidden = num(node.config.expertHidden, ffnHidden);
+          const numExperts = num(node.config.numExperts, 8);
+          parameterCount += countTopKRouter(dModel, numExperts, false);
+          parameterCount += countTopKExperts(dModel, expertHidden, numExperts, "llama");
+        } else {
+          parameterCount += countLlamaMlp(dModel, ffnHidden, Boolean(node.config.mlpBias ?? false));
+        }
+        parameterCount += countLayerNorm(dModel, false) * 2;
         hiddenSize = dModel;
         break;
       }
       case "MLP": {
         const ffnHidden = num(node.config.hiddenDim, hiddenSize * 4);
-        parameterCount += 2 * hiddenSize * ffnHidden + (ffnHidden + hiddenSize);
+        parameterCount += countGpt2Mlp(hiddenSize, ffnHidden);
         break;
       }
       case "LayerNorm":
@@ -178,12 +201,12 @@ function estimateGPT2SpecParameters(spec: GPT2ArchitectureSpec): number {
   const layers = spec.config.numHiddenLayers;
   const ffn = spec.config.intermediateSize;
 
-  const tokenEmbedding = vocab * d;
-  const positionEmbedding = pos * d;
-  const blockAttention = 4 * d * d + 4 * d;
-  const blockMlp = 2 * d * ffn + ffn + d;
-  const blockNorms = 4 * d;
-  const finalNorm = 2 * d;
+  const tokenEmbedding = countEmbedding(vocab, d);
+  const positionEmbedding = countEmbedding(pos, d);
+  const blockAttention = countGpt2Attention(d);
+  const blockMlp = countGpt2Mlp(d, ffn);
+  const blockNorms = countLayerNorm(d) * 2;
+  const finalNorm = countLayerNorm(d);
   const lmHead = spec.config.tieWordEmbeddings ? 0 : d * vocab;
 
   return tokenEmbedding + positionEmbedding + layers * (blockAttention + blockMlp + blockNorms) + finalNorm + lmHead;
@@ -198,15 +221,11 @@ function estimateLlamaSpecParameters(spec: LlamaArchitectureSpec): number {
   const kvHeads = spec.config.numKeyValueHeads;
   const headDim = spec.config.headDim;
 
-  const tokenEmbedding = vocab * d;
-  const qProj = d * (heads * headDim);
-  const kProj = d * (kvHeads * headDim);
-  const vProj = d * (kvHeads * headDim);
-  const oProj = (heads * headDim) * d;
-  const attention = qProj + kProj + vProj + oProj;
-  const mlp = d * ffn * 2 + ffn * d;
-  const norms = 2 * d;
-  const finalNorm = d;
+  const tokenEmbedding = countEmbedding(vocab, d);
+  const attention = countLlamaAttention(d, heads, kvHeads, headDim, spec.config.attentionBias);
+  const mlp = countLlamaMlp(d, ffn, spec.config.mlpBias);
+  const norms = countLayerNorm(d, false) * 2;
+  const finalNorm = countLayerNorm(d, false);
   const lmHead = spec.config.tieWordEmbeddings ? 0 : d * vocab;
 
   return tokenEmbedding + layers * (attention + mlp + norms) + finalNorm + lmHead;
@@ -226,21 +245,27 @@ function estimateHybridSpecParameters(spec: HybridDecoderArchitectureSpec): numb
 
   for (const block of spec.operators.blocks) {
     if (block.family === "gpt2") {
-      count += 4 * block.hiddenSize * block.hiddenSize + 4 * block.hiddenSize;
-      count += 2 * block.hiddenSize * block.intermediateSize + block.intermediateSize + block.hiddenSize;
-      count += 4 * block.hiddenSize;
+      count += countGpt2Attention(block.hiddenSize);
+      if (block.feedforwardType === "moe") {
+        count += countTopKRouter(block.hiddenSize, block.numExperts);
+        count += countTopKExperts(block.hiddenSize, block.expertHidden, block.numExperts, "gpt2");
+      } else {
+        count += countGpt2Mlp(block.hiddenSize, block.intermediateSize);
+      }
+      count += countLayerNorm(block.hiddenSize) * 2;
     } else {
-      const qProj = block.hiddenSize * (block.numHeads * block.headDim);
-      const kProj = block.hiddenSize * (block.numKeyValueHeads * block.headDim);
-      const vProj = block.hiddenSize * (block.numKeyValueHeads * block.headDim);
-      const oProj = (block.numHeads * block.headDim) * block.hiddenSize;
-      count += qProj + kProj + vProj + oProj;
-      count += block.hiddenSize * block.intermediateSize * 2 + block.intermediateSize * block.hiddenSize;
-      count += 2 * block.hiddenSize;
+      count += countLlamaAttention(block.hiddenSize, block.numHeads, block.numKeyValueHeads, block.headDim, block.attentionBias);
+      if (block.feedforwardType === "moe") {
+        count += countTopKRouter(block.hiddenSize, block.numExperts, false);
+        count += countTopKExperts(block.hiddenSize, block.expertHidden, block.numExperts, "llama");
+      } else {
+        count += countLlamaMlp(block.hiddenSize, block.intermediateSize, block.mlpBias);
+      }
+      count += countLayerNorm(block.hiddenSize, false) * 2;
     }
   }
 
-  count += spec.operators.finalNorm.family === "gpt2" ? 2 * d : d;
+  count += spec.operators.finalNorm.family === "gpt2" ? countLayerNorm(d) : countLayerNorm(d, false);
 
   if (!spec.config.tieWordEmbeddings) {
     count += d * vocab;
