@@ -10,6 +10,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "check": "npm run check --workspaces --if-present",
-    "dev:web": "npm run dev --workspace @neural-playground/web"
+    "dev:web": "npm run dev --workspace @neural-playground/web",
+    "dev:prune-service": "npm run dev --workspace @neural-playground/prune-service"
   }
 }

@@ -1,0 +1,11 @@
+{
+  "name": "@neural-playground/prune-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.mjs",
+    "build": "node -e \"console.log('prune-service build: no-op')\"",
+    "check": "node --check src/server.mjs"
+  }
+}
