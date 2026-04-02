@@ -36,55 +36,28 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
       <div className="export-actions">
         <div className="export-card">
           <strong>Graph JSON</strong>
-          <span>Serialized graph, nodes, edges, and training configuration.</span>
           <div className="export-buttons">
-            <button type="button" className="ghost-button" onClick={() => onOpenPreview("json")}>
-              View
-            </button>
-            <button type="button" className="ghost-button" onClick={() => onCopy(exportedJson, "json")}>
-              Copy
-            </button>
-            <button type="button" className="ghost-button" onClick={() => onDownloadText("model-graph.json", exportedJson)}>
-              Download
-            </button>
+            <button type="button" className="ghost-button export-btn" onClick={() => onOpenPreview("json")}>View</button>
+            <button type="button" className="ghost-button export-btn" onClick={() => onCopy(exportedJson, "json")}>Copy</button>
+            <button type="button" className="ghost-button export-btn" onClick={() => onDownloadText("model-graph.json", exportedJson)}>Download</button>
           </div>
         </div>
 
         <div className="export-card">
           <strong>PyTorch Model</strong>
-          <span>Generated `model.py` style export aligned to the current graph.</span>
           {!exportedPyTorch.ok ? <span className="export-warning">Unavailable: {exportedPyTorch.error}</span> : null}
           <div className="export-buttons">
-            <button type="button" className="ghost-button" onClick={() => onOpenPreview("pytorch")} disabled={!exportedPyTorch.ok}>
-              View
-            </button>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => exportedPyTorch.ok && onCopy(exportedPyTorch.value, "pytorch")}
-              disabled={!exportedPyTorch.ok}
-            >
-              Copy
-            </button>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => exportedPyTorch.ok && onDownloadText("model.py", exportedPyTorch.value)}
-              disabled={!exportedPyTorch.ok}
-            >
-              Download
-            </button>
+            <button type="button" className="ghost-button export-btn" onClick={() => onOpenPreview("pytorch")} disabled={!exportedPyTorch.ok}>View</button>
+            <button type="button" className="ghost-button export-btn" onClick={() => exportedPyTorch.ok && onCopy(exportedPyTorch.value, "pytorch")} disabled={!exportedPyTorch.ok}>Copy</button>
+            <button type="button" className="ghost-button export-btn" onClick={() => exportedPyTorch.ok && onDownloadText("model.py", exportedPyTorch.value)} disabled={!exportedPyTorch.ok}>Download</button>
           </div>
         </div>
 
         <div className="export-card">
           <strong>Full Project</strong>
-          <span>Downloads a reusable training project scaffold with generated `model.py` and config files.</span>
           {!exportedProject.ok ? <span className="export-warning">Unavailable: {exportedProject.error}</span> : null}
           <div className="export-buttons">
-            <button type="button" className="ghost-button" onClick={onDownloadProject} disabled={!exportedProject.ok}>
-              Download Project
-            </button>
+            <button type="button" className="ghost-button export-btn" onClick={onDownloadProject} disabled={!exportedProject.ok}>Download Project</button>
           </div>
         </div>
       </div>

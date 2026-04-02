@@ -39,7 +39,8 @@ button {
 .app-shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 340px;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .tool-page {
@@ -108,6 +109,12 @@ button {
 .workspace {
   padding: 24px;
   min-height: 0;
+  max-height: 100vh;
+}
+
+.sidebar {
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar {
@@ -116,9 +123,10 @@ button {
 }
 
 .workspace {
-  display: grid;
-  grid-template-rows: minmax(420px, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   gap: 18px;
+  overflow: hidden;
 }
 
 .palette {
@@ -156,8 +164,8 @@ button {
 
 .export-card {
   display: grid;
-  gap: 8px;
-  padding: 14px;
+  gap: 10px;
+  padding: 12px 14px;
   border: 1px solid rgba(139, 162, 194, 0.18);
   border-radius: 16px;
   background: rgba(13, 25, 40, 0.9);
@@ -169,12 +177,20 @@ button {
 
 .export-card .export-warning {
   color: #ffb7b0;
+  font-size: 0.85rem;
 }
 
 .export-buttons {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.export-btn {
+  flex: 1;
+  padding: 8px 6px;
+  font-size: 0.82rem;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .export-preview {
@@ -305,11 +321,69 @@ button {
   padding: 18px;
 }
 
+.canvas-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .canvas-actions {
   display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(135, 155, 191, 0.22);
+  border-radius: 12px;
+  background: rgba(14, 24, 40, 0.9);
+  overflow: hidden;
+}
+
+.zoom-btn,
+.zoom-level-btn {
+  padding: 7px 11px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #c8d3e2;
+  font-size: 1rem;
+  line-height: 1;
+  transition: background 100ms ease, color 100ms ease;
+}
+
+.zoom-btn:hover,
+.zoom-level-btn:hover {
+  background: rgba(118, 193, 255, 0.12);
+  color: #e7ecf3;
+}
+
+.zoom-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.zoom-btn:disabled:hover {
+  background: transparent;
+  color: #c8d3e2;
+}
+
+.zoom-level-btn {
+  min-width: 52px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-left: 1px solid rgba(135, 155, 191, 0.18);
+  border-right: 1px solid rgba(135, 155, 191, 0.18);
+}
+
+.zoom-fit-btn {
+  border-left: 1px solid rgba(135, 155, 191, 0.18);
+  font-size: 0.95rem;
 }
 
 .metric-pill {
@@ -359,21 +433,45 @@ button {
 
 .canvas-grid {
   position: relative;
-  min-height: 460px;
+  flex: 1;
+  min-height: 0;
   border-radius: 20px;
-  overflow: auto;
+  overflow: hidden;
+  cursor: grab;
   background:
     radial-gradient(circle at top, rgba(84, 128, 187, 0.18), transparent 30%),
     linear-gradient(180deg, rgba(10, 22, 37, 0.94), rgba(7, 16, 28, 0.96));
 }
 
-.connection-overlay {
+.canvas-grid.panning {
+  cursor: grabbing;
+}
+
+.canvas-viewport {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
+  width: 3000px;
+  height: 2000px;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.connection-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3000px;
+  height: 2000px;
   pointer-events: none;
   overflow: visible;
+}
+
+.connection-path-hitarea {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
 }
 
 .connection-path {
@@ -382,7 +480,40 @@ button {
   stroke-width: 2;
   stroke-linecap: round;
   opacity: 0.9;
+  pointer-events: none;
   filter: drop-shadow(0 0 8px rgba(118, 193, 255, 0.3));
+  transition: stroke 120ms ease, opacity 120ms ease;
+}
+
+.connection-path.selected {
+  stroke: #a8d8ff;
+  opacity: 1;
+  filter: drop-shadow(0 0 12px rgba(118, 193, 255, 0.55));
+}
+
+.edge-delete-btn {
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.edge-delete-circle {
+  fill: rgba(60, 20, 20, 0.96);
+  stroke: rgba(205, 96, 96, 0.55);
+  stroke-width: 1.5;
+  transition: fill 100ms ease, stroke 100ms ease;
+}
+
+.edge-delete-btn:hover .edge-delete-circle {
+  fill: rgba(110, 30, 30, 0.98);
+  stroke: rgba(230, 110, 110, 0.85);
+}
+
+.edge-delete-x {
+  fill: #ffb7b0;
+  font-size: 15px;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
 }
 
 .canvas-node {
@@ -517,21 +648,54 @@ input {
   margin-top: 18px;
 }
 
+.export-panel {
+  margin-top: 18px;
+}
+
 .issue-card {
   display: grid;
   gap: 6px;
   margin-top: 10px;
   padding: 12px 14px;
   border-radius: 14px;
-  border: 1px solid rgba(222, 151, 87, 0.24);
-  background: rgba(67, 40, 17, 0.85);
-  color: #f0d8b4;
+  border: 1px solid rgba(222, 100, 84, 0.45);
+  border-left: 3px solid rgba(222, 100, 84, 0.9);
+  background: rgba(80, 28, 20, 0.88);
+  color: #ffc8c2;
 }
 
 .issue-card.warning {
-  border-color: rgba(123, 163, 216, 0.2);
-  background: rgba(21, 37, 59, 0.85);
-  color: #d2def3;
+  border-color: rgba(200, 160, 60, 0.4);
+  border-left-color: rgba(230, 180, 60, 0.9);
+  background: rgba(55, 42, 14, 0.88);
+  color: #f0d890;
+}
+
+.issues-counts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.issues-count {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.issues-count.error {
+  background: rgba(214, 70, 60, 0.22);
+  color: #ff9a92;
+  border: 1px solid rgba(214, 70, 60, 0.4);
+}
+
+.issues-count.warning {
+  background: rgba(200, 160, 40, 0.18);
+  color: #f0d060;
+  border: 1px solid rgba(200, 160, 40, 0.35);
 }
 
 .issue-header {
@@ -551,13 +715,15 @@ input {
 }
 
 .issue-badge.error {
-  background: rgba(214, 98, 84, 0.18);
-  color: #ffb7b0;
+  background: rgba(214, 70, 60, 0.28);
+  color: #ff9a92;
+  border: 1px solid rgba(214, 70, 60, 0.4);
 }
 
 .issue-badge.warning {
-  background: rgba(118, 193, 255, 0.14);
-  color: #9fd2ff;
+  background: rgba(200, 160, 40, 0.22);
+  color: #f0d060;
+  border: 1px solid rgba(200, 160, 40, 0.35);
 }
 
 .issue-location {
