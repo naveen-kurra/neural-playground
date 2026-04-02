@@ -56,28 +56,11 @@ export function validateConfigCompatibility(graph: ModelGraph): ValidationIssue[
         const first = dims[0]!;
         if (!dims.every((d) => d === first)) {
           issues.push({
-            code: "add_dim_mismatch",
+            code: "config_dim_mismatch",
             message: `${node.type} inputs have mismatched dimensions (${dims.join(", ")}). All inputs must have the same dimension.`,
             nodeId: node.id
           });
         }
-      }
-    }
-
-    // --- MoE feedforward validation: any block with feedforwardType=moe ---
-    if (String(node.config.feedforwardType) === "moe") {
-      const numExperts = numberConfig(node.config.numExperts);
-      const topK = numberConfig(node.config.topK);
-      const expertHidden = numberConfig(node.config.expertHidden);
-
-      if (numExperts === null || numExperts <= 0) {
-        issues.push({ code: "invalid_expert_count", message: `${node.type} MoE requires a positive number of experts.`, nodeId: node.id });
-      }
-      if (topK === null || topK <= 0 || (numExperts !== null && numExperts > 0 && topK > numExperts)) {
-        issues.push({ code: "invalid_top_k", message: `${node.type} MoE top-k must be positive and no greater than the number of experts.`, nodeId: node.id });
-      }
-      if (expertHidden === null || expertHidden <= 0) {
-        issues.push({ code: "invalid_expert_hidden", message: `${node.type} MoE requires a positive expert hidden size.`, nodeId: node.id });
       }
     }
   }

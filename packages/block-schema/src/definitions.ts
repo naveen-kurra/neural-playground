@@ -20,7 +20,10 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "invalid_sequence_length",
         severity: "error",
-        description: "Sequence length must be greater than 1."
+        description: "Sequence length must be greater than 1.",
+        kind: "number_gt",
+        field: "sequenceLength",
+        min: 1
       }
     ],
     fields: [
@@ -57,12 +60,18 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "invalid_vocab_size",
         severity: "error",
-        description: "Vocab size must be positive."
+        description: "Vocab size must be positive.",
+        kind: "number_gt",
+        field: "vocabSize",
+        min: 0
       },
       {
         code: "invalid_embedding_dim",
         severity: "error",
-        description: "Embedding dimension must be positive."
+        description: "Embedding dimension must be positive.",
+        kind: "number_gt",
+        field: "embeddingDim",
+        min: 0
       }
     ],
     fields: [
@@ -105,12 +114,18 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "invalid_vocab_size",
         severity: "error",
-        description: "Vocab size must be positive."
+        description: "Vocab size must be positive.",
+        kind: "number_gt",
+        field: "vocabSize",
+        min: 0
       },
       {
         code: "invalid_embedding_dim",
         severity: "error",
-        description: "Embedding dimension must be positive."
+        description: "Embedding dimension must be positive.",
+        kind: "number_gt",
+        field: "embeddingDim",
+        min: 0
       }
     ],
     fields: [
@@ -153,12 +168,18 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "invalid_vocab_size",
         severity: "error",
-        description: "Vocab size must be positive."
+        description: "Vocab size must be positive.",
+        kind: "number_gt",
+        field: "vocabSize",
+        min: 0
       },
       {
         code: "invalid_embedding_dim",
         severity: "error",
-        description: "Embedding dimension must be positive."
+        description: "Embedding dimension must be positive.",
+        kind: "number_gt",
+        field: "embeddingDim",
+        min: 0
       }
     ],
     fields: [
@@ -200,12 +221,18 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "invalid_sequence_length",
         severity: "error",
-        description: "Maximum positions must be greater than 1."
+        description: "Maximum positions must be greater than 1.",
+        kind: "number_gt",
+        field: "sequenceLength",
+        min: 1
       },
       {
         code: "invalid_embedding_dim",
         severity: "error",
-        description: "Embedding dimension must be positive."
+        description: "Embedding dimension must be positive.",
+        kind: "number_gt",
+        field: "embeddingDim",
+        min: 0
       }
     ],
     fields: [
@@ -264,7 +291,17 @@ export const blockDefinitions: BlockDefinition[] = [
         dims: ["seq_len", "d_model"]
       }
     ],
-    ruleSpecs: [],
+    ruleSpecs: [
+      {
+        code: "invalid_dropout_range",
+        severity: "error",
+        description: "Dropout must be between 0 and 1.",
+        kind: "number_in_range",
+        field: "dropout",
+        min: 0,
+        max: 1
+      }
+    ],
     fields: [
       {
         key: "dropout",
@@ -298,17 +335,35 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "invalid_d_model",
         severity: "error",
-        description: "Model dimension must be positive."
+        description: "Model dimension must be positive.",
+        kind: "number_gt",
+        field: "dModel",
+        min: 0
       },
       {
         code: "invalid_num_heads",
         severity: "error",
-        description: "Number of heads must be positive."
+        description: "Number of heads must be positive.",
+        kind: "number_gt",
+        field: "numHeads",
+        min: 0
       },
       {
         code: "heads_dimension_mismatch",
         severity: "error",
-        description: "Model dimension must be divisible by the number of heads."
+        description: "Model dimension must be divisible by the number of heads.",
+        kind: "number_divisible",
+        field: "dModel",
+        otherField: "numHeads"
+      },
+      {
+        code: "invalid_dropout_range",
+        severity: "error",
+        description: "Dropout must be between 0 and 1.",
+        kind: "number_in_range",
+        field: "dropout",
+        min: 0,
+        max: 1
       }
     ],
     fields: [
@@ -361,22 +416,33 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "invalid_expert_count",
         severity: "error",
-        description: "Number of experts must be positive."
+        description: "Number of experts must be positive.",
+        kind: "number_gt",
+        field: "numExperts",
+        min: 0
       },
       {
         code: "invalid_top_k",
         severity: "error",
-        description: "Top-k must be positive and no greater than the number of experts."
+        description: "Top-k must be positive and no greater than the number of experts.",
+        kind: "number_lte_field",
+        field: "topK",
+        otherField: "numExperts",
+        min: 0
       },
       {
         code: "invalid_expert_hidden",
         severity: "error",
-        description: "Expert hidden size must be positive."
+        description: "Expert hidden size must be positive.",
+        kind: "number_gt",
+        field: "expertHidden",
+        min: 0
       },
       {
         code: "unknown_moe_input_dim",
         severity: "error",
-        description: "MoE input dimension could not be inferred from incoming connections."
+        description: "MoE input dimension could not be inferred from incoming connections.",
+        kind: "sequence_dim_known"
       }
     ],
     fields: [
@@ -431,22 +497,80 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "invalid_d_model",
         severity: "error",
-        description: "Model dimension must be positive."
+        description: "Model dimension must be positive.",
+        kind: "number_gt",
+        field: "dModel",
+        min: 0
       },
       {
         code: "invalid_num_heads",
         severity: "error",
-        description: "Number of heads must be positive."
+        description: "Number of heads must be positive.",
+        kind: "number_gt",
+        field: "numHeads",
+        min: 0
       },
       {
         code: "heads_dimension_mismatch",
         severity: "error",
-        description: "Model dimension must be divisible by the number of heads."
+        description: "Model dimension must be divisible by the number of heads.",
+        kind: "number_divisible",
+        field: "dModel",
+        otherField: "numHeads"
       },
       {
         code: "invalid_ffn_hidden",
         severity: "error",
-        description: "MLP hidden dimension must be positive."
+        description: "MLP hidden dimension must be positive.",
+        kind: "number_gt",
+        field: "ffnHidden",
+        min: 0,
+        when: { field: "feedforwardType", notEquals: "moe" }
+      },
+      {
+        code: "invalid_layer_norm_epsilon",
+        severity: "error",
+        description: "LayerNorm epsilon must be positive.",
+        kind: "number_gt",
+        field: "layerNormEpsilon",
+        min: 0
+      },
+      {
+        code: "invalid_dropout_range",
+        severity: "error",
+        description: "Dropout must be between 0 and 1.",
+        kind: "number_in_range",
+        field: "dropout",
+        min: 0,
+        max: 1
+      },
+      {
+        code: "invalid_expert_count",
+        severity: "error",
+        description: "MoE requires a positive number of experts when feedforward is set to moe.",
+        kind: "number_gt",
+        field: "numExperts",
+        min: 0,
+        when: { field: "feedforwardType", equals: "moe" }
+      },
+      {
+        code: "invalid_top_k",
+        severity: "error",
+        description: "MoE top-k must be positive and no greater than the number of experts.",
+        kind: "number_lte_field",
+        field: "topK",
+        otherField: "numExperts",
+        min: 0,
+        when: { field: "feedforwardType", equals: "moe" }
+      },
+      {
+        code: "invalid_expert_hidden",
+        severity: "error",
+        description: "MoE expert hidden size must be positive.",
+        kind: "number_gt",
+        field: "expertHidden",
+        min: 0,
+        when: { field: "feedforwardType", equals: "moe" }
       }
     ],
     fields: [
@@ -556,32 +680,98 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "invalid_d_model",
         severity: "error",
-        description: "Model dimension must be positive."
+        description: "Model dimension must be positive.",
+        kind: "number_gt",
+        field: "dModel",
+        min: 0
       },
       {
         code: "invalid_num_heads",
         severity: "error",
-        description: "Number of heads must be positive."
+        description: "Number of heads must be positive.",
+        kind: "number_gt",
+        field: "numHeads",
+        min: 0
       },
       {
         code: "heads_dimension_mismatch",
         severity: "error",
-        description: "Model dimension must be divisible by the number of heads."
+        description: "Model dimension must be divisible by the number of heads.",
+        kind: "number_divisible",
+        field: "dModel",
+        otherField: "numHeads"
       },
       {
         code: "invalid_ffn_hidden",
         severity: "error",
-        description: "MLP hidden dimension must be positive."
+        description: "MLP hidden dimension must be positive.",
+        kind: "number_gt",
+        field: "ffnHidden",
+        min: 0,
+        when: { field: "feedforwardType", notEquals: "moe" }
+      },
+      {
+        code: "invalid_layer_norm_epsilon",
+        severity: "error",
+        description: "LayerNorm epsilon must be positive.",
+        kind: "number_gt",
+        field: "rmsNormEpsilon",
+        min: 0
+      },
+      {
+        code: "invalid_dropout_range",
+        severity: "error",
+        description: "Dropout must be between 0 and 1.",
+        kind: "number_in_range",
+        field: "dropout",
+        min: 0,
+        max: 1
+      },
+      {
+        code: "invalid_expert_count",
+        severity: "error",
+        description: "MoE requires a positive number of experts when feedforward is set to moe.",
+        kind: "number_gt",
+        field: "numExperts",
+        min: 0,
+        when: { field: "feedforwardType", equals: "moe" }
+      },
+      {
+        code: "invalid_top_k",
+        severity: "error",
+        description: "MoE top-k must be positive and no greater than the number of experts.",
+        kind: "number_lte_field",
+        field: "topK",
+        otherField: "numExperts",
+        min: 0,
+        when: { field: "feedforwardType", equals: "moe" }
+      },
+      {
+        code: "invalid_expert_hidden",
+        severity: "error",
+        description: "MoE expert hidden size must be positive.",
+        kind: "number_gt",
+        field: "expertHidden",
+        min: 0,
+        when: { field: "feedforwardType", equals: "moe" }
       },
       {
         code: "invalid_kv_heads",
         severity: "error",
-        description: "KV heads must be positive, not exceed attention heads, and divide evenly into attention heads."
+        description: "KV heads must be positive, not exceed attention heads, and divide evenly into attention heads.",
+        kind: "number_lte_and_divides_field",
+        field: "numKeyValueHeads",
+        otherField: "numHeads",
+        min: 0
       },
       {
         code: "head_dim_mismatch",
         severity: "error",
-        description: "Head dim must equal hidden size divided by attention heads."
+        description: "Head dim must equal hidden size divided by attention heads.",
+        kind: "number_equals_floor_div",
+        field: "headDim",
+        otherField: "dModel",
+        divisorField: "numHeads"
       }
     ],
     fields: [
@@ -702,12 +892,16 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "invalid_hidden_dim",
         severity: "error",
-        description: "Hidden dimension must be positive."
+        description: "Hidden dimension must be positive.",
+        kind: "number_gt",
+        field: "hiddenDim",
+        min: 0
       },
       {
         code: "unknown_mlp_input_dim",
         severity: "warning",
-        description: "MLP input dimension should be inferable from incoming connections."
+        description: "MLP input dimension should be inferable from incoming connections.",
+        kind: "sequence_dim_known"
       }
     ],
     fields: [
@@ -747,9 +941,18 @@ export const blockDefinitions: BlockDefinition[] = [
     ],
     ruleSpecs: [
       {
+        code: "invalid_layer_norm_epsilon",
+        severity: "error",
+        description: "LayerNorm epsilon must be positive.",
+        kind: "number_gt",
+        field: "epsilon",
+        min: 0
+      },
+      {
         code: "unknown_layernorm_dim",
         severity: "warning",
-        description: "LayerNorm dimension should be inferable from incoming connections."
+        description: "LayerNorm dimension should be inferable from incoming connections.",
+        kind: "sequence_dim_known"
       }
     ],
     fields: [
@@ -782,9 +985,18 @@ export const blockDefinitions: BlockDefinition[] = [
     ],
     ruleSpecs: [
       {
+        code: "invalid_layer_norm_epsilon",
+        severity: "error",
+        description: "LayerNorm epsilon must be positive.",
+        kind: "number_gt",
+        field: "epsilon",
+        min: 0
+      },
+      {
         code: "unknown_layernorm_dim",
         severity: "warning",
-        description: "LayerNorm dimension should be inferable from incoming connections."
+        description: "LayerNorm dimension should be inferable from incoming connections.",
+        kind: "sequence_dim_known"
       }
     ],
     fields: [
@@ -817,9 +1029,18 @@ export const blockDefinitions: BlockDefinition[] = [
     ],
     ruleSpecs: [
       {
+        code: "invalid_layer_norm_epsilon",
+        severity: "error",
+        description: "LayerNorm epsilon must be positive.",
+        kind: "number_gt",
+        field: "epsilon",
+        min: 0
+      },
+      {
         code: "unknown_layernorm_dim",
         severity: "warning",
-        description: "Final norm dimension should be inferable from incoming connections."
+        description: "Final norm dimension should be inferable from incoming connections.",
+        kind: "sequence_dim_known"
       }
     ],
     fields: [
@@ -882,9 +1103,18 @@ export const blockDefinitions: BlockDefinition[] = [
     vocabSizeField: "vocabSize",
     ruleSpecs: [
       {
+        code: "invalid_vocab_size",
+        severity: "error",
+        description: "Vocab size must be positive.",
+        kind: "number_gt",
+        field: "vocabSize",
+        min: 0
+      },
+      {
         code: "unknown_output_dim",
         severity: "warning",
-        description: "LM head dimension should be inferable from incoming connections."
+        description: "LM head dimension should be inferable from incoming connections.",
+        kind: "output_dim_known"
       }
     ],
     fields: [
@@ -924,9 +1154,18 @@ export const blockDefinitions: BlockDefinition[] = [
     vocabSizeField: "vocabSize",
     ruleSpecs: [
       {
+        code: "invalid_vocab_size",
+        severity: "error",
+        description: "Vocab size must be positive.",
+        kind: "number_gt",
+        field: "vocabSize",
+        min: 0
+      },
+      {
         code: "unknown_output_dim",
         severity: "warning",
-        description: "LM head dimension should be inferable from incoming connections."
+        description: "LM head dimension should be inferable from incoming connections.",
+        kind: "output_dim_known"
       }
     ],
     fields: [
@@ -966,7 +1205,9 @@ export const blockDefinitions: BlockDefinition[] = [
       {
         code: "unknown_output_dim",
         severity: "warning",
-        description: "Output head dimension should be inferable from incoming connections."
+        description: "Output head dimension should be inferable from incoming connections.",
+        kind: "output_dim_known",
+        when: { field: "headType", equals: "LanguageModel" }
       }
     ],
     fields: [

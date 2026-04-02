@@ -16,10 +16,33 @@ export type ShapeContract = {
 
 export type RuleSeverity = "error" | "warning";
 
+export type BlockRuleKind =
+  | "number_gt"
+  | "number_in_range"
+  | "number_lte_field"
+  | "number_divisible"
+  | "number_lte_and_divides_field"
+  | "number_equals_floor_div"
+  | "sequence_dim_known"
+  | "output_dim_known";
+
+export type BlockRuleCondition = {
+  field: string;
+  equals?: string | number | boolean;
+  notEquals?: string | number | boolean;
+};
+
 export type BlockRuleSpec = {
   code: string;
   severity: RuleSeverity;
   description: string;
+  kind: BlockRuleKind;
+  field?: string;
+  otherField?: string;
+  divisorField?: string;
+  min?: number;
+  max?: number;
+  when?: BlockRuleCondition;
 };
 
 export type BlockDefinition = {
@@ -38,4 +61,3 @@ export type BlockDefinition = {
   /** Config field that holds the vocabulary size for this block. Used for cross-node vocab mismatch detection. */
   vocabSizeField?: string;
 };
-

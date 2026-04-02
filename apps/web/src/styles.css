@@ -197,6 +197,55 @@ button {
   margin-top: 18px;
 }
 
+.preview-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.preview-modal {
+  background: #0d1928;
+  border: 1px solid rgba(139, 162, 194, 0.2);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 900px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.preview-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(139, 162, 194, 0.12);
+  flex-shrink: 0;
+}
+
+.preview-modal-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.preview-modal-content {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 24px;
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: #b8c4d6;
+  white-space: pre;
+}
+
 .copy-status {
   margin: 12px 0 0;
   color: #8fd1a3;

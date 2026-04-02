@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import type { CopyStatus, ExportPreview, SafeExport } from "../app/types";
 
 type ExportPanelProps<TProjectFiles> = {
@@ -24,6 +25,11 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
     onDownloadText,
     onDownloadProject
   } = props;
+
+  const previewTitle = exportPreview === "json" ? "Graph JSON" : "PyTorch Model";
+  const previewContent = exportPreview === "json"
+    ? exportedJson
+    : exportedPyTorch.ok ? exportedPyTorch.value : exportedPyTorch.error;
 
   return (
     <section className="export-panel">
@@ -69,19 +75,35 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
           {copyStatus === "copy-failed" ? "Copy failed in this browser." : null}
         </p>
       ) : null}
-      {exportPreview ? (
-        <div className="export-preview">
-          <div className="panel-header row export-subheader">
-            <div>
-              <p className="eyebrow">Preview</p>
-              <h2>{exportPreview === "json" ? "Graph JSON" : "PyTorch Model"}</h2>
+
+      {exportPreview ? createPortal(
+        <div className="preview-modal-overlay" onClick={() => onOpenPreview(null)}>
+          <div className="preview-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="preview-modal-header">
+              <div>
+                <p className="eyebrow">Preview</p>
+                <h2>{previewTitle}</h2>
+              </div>
+              <div className="preview-modal-actions">
+                {exportPreview === "json" && (
+                  <>
+                    <button type="button" className="ghost-button" onClick={() => onCopy(exportedJson, "json")}>Copy</button>
+                    <button type="button" className="ghost-button" onClick={() => onDownloadText("model-graph.json", exportedJson)}>Download</button>
+                  </>
+                )}
+                {exportPreview === "pytorch" && exportedPyTorch.ok && (
+                  <>
+                    <button type="button" className="ghost-button" onClick={() => onCopy(exportedPyTorch.value, "pytorch")}>Copy</button>
+                    <button type="button" className="ghost-button" onClick={() => onDownloadText("model.py", exportedPyTorch.value)}>Download</button>
+                  </>
+                )}
+                <button type="button" className="ghost-button" onClick={() => onOpenPreview(null)}>Close</button>
+              </div>
             </div>
-            <button type="button" className="ghost-button" onClick={() => onOpenPreview(null)}>
-              Close
-            </button>
+            <pre className="preview-modal-content">{previewContent}</pre>
           </div>
-          <pre>{exportPreview === "json" ? exportedJson : exportedPyTorch.ok ? exportedPyTorch.value : exportedPyTorch.error}</pre>
-        </div>
+        </div>,
+        document.body
       ) : null}
     </section>
   );
