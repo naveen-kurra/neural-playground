@@ -214,7 +214,10 @@ button {
   border-radius: 16px;
   width: 100%;
   max-width: 900px;
-  max-height: 85vh;
+  height: 90vh;
+  height: min(90dvh, 960px);
+  max-height: calc(100vh - 28px);
+  max-height: calc(100dvh - 28px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -244,6 +247,52 @@ button {
   line-height: 1.6;
   color: #b8c4d6;
   white-space: pre;
+}
+
+.code-viewer {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+}
+
+.code-viewer .cm-editor {
+  height: 100%;
+}
+
+.code-viewer .cm-scroller {
+  height: 100%;
+  overflow: auto;
+}
+
+.code-viewer-loading {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 10px;
+  text-align: center;
+  white-space: normal;
+}
+
+.code-viewer-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 3px solid rgba(118, 193, 255, 0.2);
+  border-top-color: #76c1ff;
+  animation: code-viewer-spin 0.8s linear infinite;
+}
+
+.code-viewer-loading-title {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #d3ddec;
+}
+
+.code-viewer-loading-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #8fa3bf;
 }
 
 .json-editor-wrap {
@@ -819,6 +868,38 @@ pre {
   color: #aed4ff;
   font-size: 0.83rem;
   line-height: 1.5;
+}
+
+@keyframes code-viewer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-height: 760px) {
+  .preview-modal-overlay {
+    padding: 12px;
+  }
+
+  .preview-modal {
+    height: calc(100vh - 24px);
+    height: calc(100dvh - 24px);
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
+  .preview-modal-header {
+    padding: 14px 16px 12px;
+  }
+
+  .preview-modal-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .preview-modal-content {
+    padding: 14px 16px;
+  }
 }
 
 @media (max-width: 1200px) {

@@ -1,5 +1,9 @@
 import { createPortal } from "react-dom";
+import { lazy, Suspense, useRef } from "react";
 import type { CopyStatus, ExportPreview, SafeExport } from "../app/types";
+import type { CodeViewerHandle } from "./CodeViewer";
+
+const CodeViewer = lazy(() => import("./CodeViewer").then((m) => ({ default: m.CodeViewer })));
 
 type ExportPanelProps<TProjectFiles> = {
   exportedJson: string;
@@ -35,6 +39,8 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
     onDownloadText,
     onDownloadProject
   } = props;
+
+  const codeViewerRef = useRef<CodeViewerHandle | null>(null);
 
   const previewTitle = exportPreview === "json" ? "Graph JSON" : "PyTorch Model";
   const previewContent = exportedPyTorch.ok ? exportedPyTorch.value : exportedPyTorch.error;
@@ -102,6 +108,7 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
                 )}
                 {exportPreview === "pytorch" && exportedPyTorch.ok && (
                   <>
+                    <button type="button" className="ghost-button" onClick={() => codeViewerRef.current?.openSearch()}>Search</button>
                     <button type="button" className="ghost-button" onClick={() => onCopy(exportedPyTorch.value, "pytorch")}>Copy</button>
                     <button type="button" className="ghost-button" onClick={() => onDownloadText("model.py", exportedPyTorch.value)}>Download</button>
                   </>
@@ -120,7 +127,15 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
                 />
               </div>
             ) : (
-              <pre className="preview-modal-content">{previewContent}</pre>
+              <Suspense fallback={(
+                <div className="preview-modal-content code-viewer-loading" role="status" aria-live="polite">
+                  <div className="code-viewer-loading-spinner" aria-hidden="true" />
+                  <p className="code-viewer-loading-title">Loading code viewer...</p>
+                  <p className="code-viewer-loading-subtitle">Syntax highlighting and search are initializing.</p>
+                </div>
+              )}>
+                <CodeViewer ref={codeViewerRef} code={previewContent ?? ""} />
+              </Suspense>
             )}
           </div>
         </div>,

@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@codemirror/lang-python": "^6.2.1",
     "@neural-playground/block-schema": "*",
     "@neural-playground/exporter-pytorch": "*",
     "@neural-playground/ir-schema": "*",
     "@neural-playground/validator": "*",
+    "codemirror": "^6.0.2",
     "jszip": "^3.10.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
