@@ -135,6 +135,18 @@ export function normalizeGraphForGenericExport(graph: ModelGraph): SafeGraph {
         continue;
       }
 
+      if (node.type === "MoE") {
+        normalizedNodes.push(
+          makeNode("MoE", index++, {
+            numExperts: Number(node.config.numExperts ?? 8),
+            topK: Number(node.config.topK ?? 2),
+            expertHidden: Number(node.config.expertHidden ?? 3072),
+            activation: String(node.config.activation ?? graph.training.activation ?? "GELU")
+          })
+        );
+        continue;
+      }
+
       if (node.type === "LayerNorm" || node.type === "GPT2FinalLayerNorm" || node.type === "LlamaFinalRMSNorm") {
         normalizedNodes.push(
           makeNode("LayerNorm", index++, {

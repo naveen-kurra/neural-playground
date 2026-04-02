@@ -68,6 +68,50 @@ const nodeRuleHandlers: Record<string, NodeRuleHandler> = {
       }
     ];
   },
+  invalid_expert_count(node) {
+    const numExperts = numberConfig(node.config.numExperts);
+    if (numExperts !== null && numExperts > 0) {
+      return [];
+    }
+    return [
+      {
+        code: "invalid_expert_count",
+        message: getRuleMessage(node.type, "invalid_expert_count", "MoE requires a positive number of experts."),
+        nodeId: node.id
+      }
+    ];
+  },
+  invalid_top_k(node) {
+    const topK = numberConfig(node.config.topK);
+    const numExperts = numberConfig(node.config.numExperts);
+    if (topK !== null && numExperts !== null && topK > 0 && numExperts > 0 && topK <= numExperts) {
+      return [];
+    }
+    return [
+      {
+        code: "invalid_top_k",
+        message: getRuleMessage(
+          node.type,
+          "invalid_top_k",
+          "MoE requires top-k to be positive and no greater than the number of experts."
+        ),
+        nodeId: node.id
+      }
+    ];
+  },
+  invalid_expert_hidden(node) {
+    const expertHidden = numberConfig(node.config.expertHidden);
+    if (expertHidden !== null && expertHidden > 0) {
+      return [];
+    }
+    return [
+      {
+        code: "invalid_expert_hidden",
+        message: getRuleMessage(node.type, "invalid_expert_hidden", "MoE requires a positive expert hidden size."),
+        nodeId: node.id
+      }
+    ];
+  },
   invalid_vocab_size(node) {
     const vocabSize = numberConfig(node.config.vocabSize);
     if (vocabSize !== null && vocabSize > 0) {
@@ -119,6 +163,23 @@ const nodeRuleHandlers: Record<string, NodeRuleHandler> = {
           node.type,
           "unknown_mlp_input_dim",
           "MLP input dimension could not be inferred from incoming connections."
+        ),
+        nodeId: node.id
+      }
+    ];
+  },
+  unknown_moe_input_dim(node, inferredSequenceDims) {
+    const inferredDim = inferNodeSequenceDim(node, inferredSequenceDims);
+    if (inferredDim !== null) {
+      return [];
+    }
+    return [
+      {
+        code: "unknown_moe_input_dim",
+        message: getRuleMessage(
+          node.type,
+          "unknown_moe_input_dim",
+          "MoE input dimension could not be inferred from incoming connections."
         ),
         nodeId: node.id
       }

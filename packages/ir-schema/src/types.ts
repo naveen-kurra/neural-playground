@@ -245,6 +245,10 @@ export type HybridBlockOp =
       numHeads: number;
       layerNormEpsilon: number;
       activation: string;
+      feedforwardType: "mlp" | "moe";
+      numExperts: number;
+      topK: number;
+      expertHidden: number;
       attnDropout: number;
       residDropout: number;
       scaleAttnWeights: boolean;

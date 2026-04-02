@@ -12,6 +12,10 @@ function renderBlockInit(block: HybridBlockOp): string {
                 num_attention_heads=${block.numHeads},
                 layer_norm_epsilon=${block.layerNormEpsilon},
                 activation_function="${block.activation}",
+                feedforward_type="${block.feedforwardType}",
+                num_experts=${block.numExperts},
+                top_k=${block.topK},
+                expert_hidden=${block.expertHidden},
                 attn_pdrop=${block.attnDropout},
                 resid_pdrop=${block.residDropout},
                 scale_attn_weights=${pythonBool(block.scaleAttnWeights)},
@@ -85,6 +89,10 @@ class HybridGPT2BlockConfig:
     activation_function: str
     attn_pdrop: float
     resid_pdrop: float
+    feedforward_type: str = "mlp"
+    num_experts: int = 8
+    top_k: int = 2
+    expert_hidden: int = 3072
     scale_attn_weights: bool = True
     scale_attn_by_inverse_layer_idx: bool = False
     reorder_and_upcast_attn: bool = False
@@ -223,13 +231,61 @@ class GPT2MLP(nn.Module):
         return self.dropout(hidden_states)
 
 
+class GPT2MoE(nn.Module):
+    def __init__(self, config: HybridGPT2BlockConfig) -> None:
+        super().__init__()
+        if config.num_experts <= 0:
+            raise ValueError("num_experts must be positive")
+        if config.top_k <= 0 or config.top_k > config.num_experts:
+            raise ValueError("top_k must be between 1 and num_experts")
+        self.top_k = config.top_k
+        self.gate = Conv1D(config.num_experts, config.hidden_size)
+        expert_hidden = config.expert_hidden or config.intermediate_size
+        self.experts = nn.ModuleList(
+            [
+                GPT2MLP(
+                    HybridGPT2BlockConfig(
+                        hidden_size=config.hidden_size,
+                        intermediate_size=expert_hidden,
+                        num_attention_heads=config.num_attention_heads,
+                        layer_norm_epsilon=config.layer_norm_epsilon,
+                        activation_function=config.activation_function,
+                        feedforward_type="mlp",
+                        num_experts=config.num_experts,
+                        top_k=config.top_k,
+                        expert_hidden=expert_hidden,
+                        attn_pdrop=config.attn_pdrop,
+                        resid_pdrop=config.resid_pdrop,
+                        scale_attn_weights=config.scale_attn_weights,
+                        scale_attn_by_inverse_layer_idx=config.scale_attn_by_inverse_layer_idx,
+                        reorder_and_upcast_attn=config.reorder_and_upcast_attn,
+                        layer_idx=config.layer_idx,
+                    )
+                )
+                for _ in range(config.num_experts)
+            ]
+        )
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        gate_logits = self.gate(hidden_states)
+        topk_logits, topk_indices = torch.topk(gate_logits, k=self.top_k, dim=-1)
+        topk_weights = torch.softmax(topk_logits, dim=-1)
+        expert_outputs = torch.stack([expert(hidden_states) for expert in self.experts], dim=2)
+        gather_index = topk_indices.unsqueeze(-1).expand(*topk_indices.shape, hidden_states.size(-1))
+        selected_outputs = torch.gather(expert_outputs, 2, gather_index)
+        return (selected_outputs * topk_weights.unsqueeze(-1)).sum(dim=2)
+
+
 class GPT2Block(nn.Module):
     def __init__(self, config: HybridGPT2BlockConfig) -> None:
         super().__init__()
         self.ln_1 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_epsilon)
         self.attn = GPT2Attention(config)
         self.ln_2 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_epsilon)
-        self.mlp = GPT2MLP(config)
+        if config.feedforward_type == "moe":
+            self.mlp = GPT2MoE(config)
+        else:
+            self.mlp = GPT2MLP(config)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         residual = hidden_states

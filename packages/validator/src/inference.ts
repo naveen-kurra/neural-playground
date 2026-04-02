@@ -54,6 +54,7 @@ export function getInputSequenceDim(
     case "LayerNorm":
     case "LlamaFinalRMSNorm":
     case "GPT2FinalLayerNorm":
+    case "MoE":
     case "MLP":
     case "Add":
     case "Dropout":
@@ -83,6 +84,7 @@ export function getOutputSequenceDim(
     case "LayerNorm":
     case "LlamaFinalRMSNorm":
     case "GPT2FinalLayerNorm":
+    case "MoE":
     case "MLP":
     case "Add":
     case "Dropout":

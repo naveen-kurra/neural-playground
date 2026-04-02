@@ -23,12 +23,19 @@ function renderModuleDefinitions(ctx: ExportContext): string[] {
     if (node.type === "TransformerBlock") {
       const dModel = Number(node.config.dModel ?? currentDim);
       const nHeads = Number(node.config.numHeads ?? ctx.defaultHeads);
-      const ffnHidden = Number(node.config.ffnHidden ?? ctx.defaultFfnHidden);
+      lines.push(`        self.${name} = TransformerBlock(d_model=${dModel}, n_heads=${nHeads})`);
+      currentDim = dModel;
+      continue;
+    }
+
+    if (node.type === "MoE") {
+      const expertHidden = Number(node.config.expertHidden ?? ctx.defaultFfnHidden);
+      const numExperts = Number(node.config.numExperts ?? 8);
+      const topK = Number(node.config.topK ?? 2);
       const activation = normalizeActivation(node.config.activation ?? ctx.defaultActivation);
       lines.push(
-        `        self.${name} = TransformerBlock(d_model=${dModel}, n_heads=${nHeads}, ffn_hidden=${ffnHidden}, activation_name="${activation}")`
+        `        self.${name} = TopKMoE(d_model=${currentDim}, expert_hidden=${expertHidden}, num_experts=${numExperts}, top_k=${topK}, activation_name="${activation}")`
       );
-      currentDim = dModel;
       continue;
     }
 
@@ -206,17 +213,41 @@ class FeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, d_model: int, n_heads: int, ffn_hidden: int, activation_name: str = "gelu") -> None:
+    def __init__(self, d_model: int, n_heads: int) -> None:
         super().__init__()
         self.ln1 = nn.LayerNorm(d_model)
         self.attn = CausalSelfAttention(d_model=d_model, n_heads=n_heads)
-        self.ln2 = nn.LayerNorm(d_model)
-        self.ffn = FeedForward(d_model=d_model, ffn_hidden=ffn_hidden, activation_name=activation_name)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.attn(self.ln1(x))
-        x = x + self.ffn(self.ln2(x))
         return x
+
+
+class TopKMoE(nn.Module):
+    def __init__(self, d_model: int, expert_hidden: int, num_experts: int, top_k: int, activation_name: str = "gelu") -> None:
+        super().__init__()
+        if num_experts <= 0:
+            raise ValueError("num_experts must be positive")
+        if top_k <= 0 or top_k > num_experts:
+            raise ValueError("top_k must be between 1 and num_experts")
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.gate = nn.Linear(d_model, num_experts)
+        self.experts = nn.ModuleList([
+            FeedForward(d_model=d_model, ffn_hidden=expert_hidden, activation_name=activation_name)
+            for _ in range(num_experts)
+        ])
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        gate_logits = self.gate(x)
+        topk_logits, topk_indices = torch.topk(gate_logits, k=self.top_k, dim=-1)
+        topk_weights = torch.softmax(topk_logits, dim=-1)
+
+        expert_outputs = torch.stack([expert(x) for expert in self.experts], dim=2)
+        gather_index = topk_indices.unsqueeze(-1).expand(*topk_indices.shape, x.size(-1))
+        selected_outputs = torch.gather(expert_outputs, 2, gather_index)
+        mixed = (selected_outputs * topk_weights.unsqueeze(-1)).sum(dim=2)
+        return x + mixed
 
 
 class DecoderLM(nn.Module):

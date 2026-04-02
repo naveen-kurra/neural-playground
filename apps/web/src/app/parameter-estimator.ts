@@ -98,11 +98,16 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
       }
       case "TransformerBlock": {
         const dModel = num(node.config.dModel, hiddenSize);
-        const ffnHidden = num(node.config.ffnHidden, dModel * 4);
         parameterCount += 4 * dModel * dModel + 4 * dModel;
-        parameterCount += 2 * dModel * ffnHidden + (ffnHidden + dModel);
-        parameterCount += 4 * dModel;
+        parameterCount += 2 * dModel;
         hiddenSize = dModel;
+        break;
+      }
+      case "MoE": {
+        const expertHidden = num(node.config.expertHidden, hiddenSize * 4);
+        const numExperts = num(node.config.numExperts, 8);
+        parameterCount += hiddenSize * numExperts + numExperts;
+        parameterCount += numExperts * (2 * hiddenSize * expertHidden + (expertHidden + hiddenSize));
         break;
       }
       case "GPT2Block": {

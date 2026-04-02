@@ -118,6 +118,25 @@ function mapExactGpt2ProjectionToIr(graph: ModelGraph, ordered: ModelGraph["node
 
   const hiddenSize = Number(tokenEmbedding.config.embeddingDim ?? 768);
   const firstBlock = blocks[0];
+  const hasCustomBlockConfig = blocks.some((block) => {
+    const feedforwardType = String(block.config.feedforwardType ?? "mlp");
+    const activation = String(block.config.activation ?? "gelu_new");
+    const layerNormEpsilon = Number(block.config.layerNormEpsilon ?? 1e-5);
+    const scaleAttnWeights = Boolean(block.config.scaleAttnWeights ?? true);
+    const scaleByLayer = Boolean(block.config.scaleAttnByInverseLayerIdx ?? false);
+    const reorder = Boolean(block.config.reorderAndUpcastAttn ?? false);
+    return (
+      feedforwardType !== "mlp" ||
+      activation !== "gelu_new" ||
+      layerNormEpsilon !== 1e-5 ||
+      scaleAttnWeights !== true ||
+      scaleByLayer !== false ||
+      reorder !== false
+    );
+  });
+  if (hasCustomBlockConfig) {
+    throw new Error("Customized GPT-2 block internals are exported through the hybrid path.");
+  }
 
   return buildGPT2ArchitectureSpec({
     name: "GPT-2 (exact canvas)",
@@ -127,14 +146,14 @@ function mapExactGpt2ProjectionToIr(graph: ModelGraph, ordered: ModelGraph["node
     numHiddenLayers: blocks.length,
     numAttentionHeads: Number(firstBlock?.config.numHeads ?? 12),
     intermediateSize: Number(firstBlock?.config.ffnHidden ?? hiddenSize * 4),
-    activationFunction: normalizeActivationName(graph.training.activation),
+    activationFunction: String(firstBlock?.config.activation ?? normalizeActivationName(graph.training.activation)),
     attnDropout: Number(firstBlock?.config.dropout ?? dropoutNode.config.dropout ?? 0.1),
     residDropout: Number(firstBlock?.config.dropout ?? dropoutNode.config.dropout ?? 0.1),
     embdDropout: Number(dropoutNode.config.dropout ?? 0.1),
-    layerNormEpsilon: Number(finalNormNode.config.epsilon ?? 1e-5),
-    scaleAttnWeights: true,
-    scaleAttnByInverseLayerIdx: false,
-    reorderAndUpcastAttn: false,
+    layerNormEpsilon: Number(firstBlock?.config.layerNormEpsilon ?? finalNormNode.config.epsilon ?? 1e-5),
+    scaleAttnWeights: Boolean(firstBlock?.config.scaleAttnWeights ?? true),
+    scaleAttnByInverseLayerIdx: Boolean(firstBlock?.config.scaleAttnByInverseLayerIdx ?? false),
+    reorderAndUpcastAttn: Boolean(firstBlock?.config.reorderAndUpcastAttn ?? false),
     tieWordEmbeddings: Boolean(lmHeadNode.config.tiedWeights ?? true)
   });
 }
@@ -220,7 +239,16 @@ export function projectGPT2IrToModelGraph(spec: GPT2ArchitectureSpec): ModelGrap
       dModel: spec.config.hiddenSize,
       numHeads: spec.config.numAttentionHeads,
       ffnHidden: spec.config.intermediateSize,
-      dropout: spec.config.residDropout
+      feedforwardType: "mlp",
+      numExperts: 8,
+      topK: 2,
+      expertHidden: spec.config.intermediateSize,
+      activation: spec.config.activationFunction,
+      layerNormEpsilon: spec.config.layerNormEpsilon,
+      dropout: spec.config.residDropout,
+      scaleAttnWeights: spec.config.scaleAttnWeights,
+      scaleAttnByInverseLayerIdx: spec.config.scaleAttnByInverseLayerIdx,
+      reorderAndUpcastAttn: spec.config.reorderAndUpcastAttn
     }
   }));
 
@@ -431,6 +459,7 @@ export function mapModelGraphToHybridIr(graph: ModelGraph): HybridDecoderArchite
     }
 
     if (node.type === "GPT2Block") {
+      const feedforwardType = String(node.config.feedforwardType ?? "mlp") === "moe" ? ("moe" as const) : ("mlp" as const);
       return {
         family: "gpt2" as const,
         kind: "hybrid_block" as const,
@@ -440,13 +469,17 @@ export function mapModelGraphToHybridIr(graph: ModelGraph): HybridDecoderArchite
         hiddenSize,
         intermediateSize: Number(node.config.ffnHidden ?? hiddenSize * 4),
         numHeads: Number(node.config.numHeads ?? 12),
-        layerNormEpsilon: 1e-5,
-        activation: "gelu_new",
+        layerNormEpsilon: Number(node.config.layerNormEpsilon ?? 1e-5),
+        activation: String(node.config.activation ?? "gelu_new"),
+        feedforwardType,
+        numExperts: Number(node.config.numExperts ?? 8),
+        topK: Number(node.config.topK ?? 2),
+        expertHidden: Number(node.config.expertHidden ?? node.config.ffnHidden ?? hiddenSize * 4),
         attnDropout: Number(node.config.dropout ?? 0.1),
         residDropout: Number(node.config.dropout ?? 0.1),
-        scaleAttnWeights: true,
-        scaleAttnByInverseLayerIdx: false,
-        reorderAndUpcastAttn: false,
+        scaleAttnWeights: Boolean(node.config.scaleAttnWeights ?? true),
+        scaleAttnByInverseLayerIdx: Boolean(node.config.scaleAttnByInverseLayerIdx ?? false),
+        reorderAndUpcastAttn: Boolean(node.config.reorderAndUpcastAttn ?? false),
         expandTo: {} as never
       };
     }
@@ -462,9 +495,9 @@ export function mapModelGraphToHybridIr(graph: ModelGraph): HybridDecoderArchite
       numHeads: Number(node.config.numHeads ?? 32),
       numKeyValueHeads: Number(node.config.numKeyValueHeads ?? node.config.numHeads ?? 32),
       headDim: Number(node.config.headDim ?? Math.floor(hiddenSize / Number(node.config.numHeads ?? 32))),
-      rmsNormEpsilon: Number(node.config.epsilon ?? 1e-6),
+      rmsNormEpsilon: Number(node.config.rmsNormEpsilon ?? 1e-6),
       ropeTheta: Number(node.config.ropeTheta ?? 10000),
-      activation: "silu",
+      activation: String(node.config.activation ?? "silu"),
       attentionBias: Boolean(node.config.attentionBias ?? false),
       attentionDropout: Number(node.config.dropout ?? 0),
       mlpBias: Boolean(node.config.mlpBias ?? false),
@@ -618,8 +651,14 @@ export function projectLlamaIrToModelGraph(spec: LlamaArchitectureSpec): ModelGr
       dModel: spec.config.hiddenSize,
       numHeads: spec.config.numAttentionHeads,
       numKeyValueHeads: spec.config.numKeyValueHeads,
+      headDim: spec.config.headDim,
       ffnHidden: spec.config.intermediateSize,
-      ropeTheta: spec.config.ropeTheta
+      ropeTheta: spec.config.ropeTheta,
+      rmsNormEpsilon: spec.config.rmsNormEpsilon,
+      activation: spec.config.hiddenActivation,
+      attentionBias: spec.config.attentionBias,
+      dropout: spec.config.attentionDropout,
+      mlpBias: spec.config.mlpBias
     }
   }));
 

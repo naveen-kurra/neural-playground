@@ -85,6 +85,7 @@ export function buildContext(graph: ModelGraph): ExportContext {
 
   const firstTransformer = orderedNodes.find((node) => node.type === "TransformerBlock");
   const firstMlp = orderedNodes.find((node) => node.type === "MLP");
+  const firstMoe = orderedNodes.find((node) => node.type === "MoE");
 
   let currentDim = Number(embeddingNode.config.embeddingDim ?? 768);
   for (const node of orderedNodes) {
@@ -102,7 +103,7 @@ export function buildContext(graph: ModelGraph): ExportContext {
     embeddingDim: Number(embeddingNode.config.embeddingDim ?? 768),
     transformerCount: orderedNodes.filter((node) => node.type === "TransformerBlock").length,
     defaultHeads: Number(firstTransformer?.config.numHeads ?? 12),
-    defaultFfnHidden: Number(firstTransformer?.config.ffnHidden ?? firstMlp?.config.hiddenDim ?? currentDim * 4),
+    defaultFfnHidden: Number(firstMoe?.config.expertHidden ?? firstMlp?.config.hiddenDim ?? currentDim * 4),
     defaultActivation: normalizeActivation(firstMlp?.config.activation ?? graph.training.activation ?? "gelu"),
     optimizerName: normalizeOptimizer(graph.training.optimizer),
     lossName: normalizeLoss(graph.training.loss),

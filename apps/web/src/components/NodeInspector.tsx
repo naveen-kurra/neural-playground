@@ -10,6 +10,20 @@ type NodeInspectorProps = {
 
 export function NodeInspector(props: NodeInspectorProps) {
   const { node, definition, onChange, onDelete } = props;
+  const feedforwardType = String(node.config.feedforwardType ?? "mlp");
+
+  const visibleFields = definition.fields.filter((field) => {
+    if (node.type === "GPT2Block") {
+      if (field.key === "ffnHidden") {
+        return feedforwardType !== "moe";
+      }
+      if (field.key === "numExperts" || field.key === "topK" || field.key === "expertHidden") {
+        return feedforwardType === "moe";
+      }
+    }
+
+    return true;
+  });
 
   return (
     <section className="inspector-panel">
@@ -20,7 +34,7 @@ export function NodeInspector(props: NodeInspectorProps) {
       <p className="panel-copy">{definition.description}</p>
 
       <div className="form-stack">
-        {definition.fields.map((field) => {
+        {visibleFields.map((field) => {
           const value = node.config[field.key] ?? field.defaultValue;
           return (
             <label key={field.key} className="field">

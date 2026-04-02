@@ -20,6 +20,7 @@ export type BlockType =
   | "TransformerBlock"
   | "LlamaBlock"
   | "GPT2Block"
+  | "MoE"
   | "MLP"
   | "LayerNorm"
   | "LlamaFinalRMSNorm"
