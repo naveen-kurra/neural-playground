@@ -1,9 +1,10 @@
-import type { BlockNode } from "@neural-playground/block-schema";
+import type { BlockNode, ModelGraph } from "@neural-playground/block-schema";
 
 export type ExportTarget = "pytorch";
 export type ProjectFileMap = Record<string, string>;
 
 export type ExportContext = {
+  graph: ModelGraph;
   orderedNodes: BlockNode[];
   warnings: string[];
   vocabSize: number;

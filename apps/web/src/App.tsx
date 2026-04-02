@@ -1,12 +1,35 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { getBlockDefinition, type BlockEdge, type BlockField, type BlockNode, type ModelGraph } from "@neural-playground/block-schema";
-import { exportModelGraphToPyTorch, exportProjectFiles } from "@neural-playground/exporter-pytorch";
+import {
+  exportGPT2IrProjectFiles,
+  exportGPT2IrToPyTorch,
+  exportHybridIrProjectFiles,
+  exportHybridIrToPyTorch,
+  exportLlamaIrProjectFiles,
+  exportLlamaIrToPyTorch,
+  exportModelGraphToPyTorch,
+  exportProjectFiles
+} from "@neural-playground/exporter-pytorch";
+import {
+  buildGPT2ArchitectureSpec,
+  buildLlamaArchitectureSpec,
+  mapModelGraphToGPT2Ir,
+  mapModelGraphToHybridIr,
+  mapModelGraphToLlamaIr,
+  projectGPT2IrToModelGraph,
+  projectLlamaIrToModelGraph
+} from "@neural-playground/ir-schema";
 import JSZip from "jszip";
-import { validateGraph } from "@neural-playground/validator";
+import { validateGraph, type ValidationIssue } from "@neural-playground/validator";
 import { createNode, defaultTrainingConfig } from "./app/defaults";
+import { normalizeGraphForGenericExport } from "./app/export-normalization";
 import { downloadBlobFile, downloadTextFile } from "./app/file-utils";
+import { resolveTemplate } from "./app/model-templates";
+import { formatParameterCount } from "./app/parameter-estimator";
+import { graphPresets } from "./app/presets";
 import { readProjectFromInput } from "./app/project";
 import type { CopyStatus, ExportPreview, ProjectDocument, SafeExport, SelectedState } from "./app/types";
+import { formatValidationIssue } from "./app/validation";
 import { CanvasPanel } from "./components/CanvasPanel";
 import { ConnectionsPanel } from "./components/ConnectionsPanel";
 import { ExportPanel } from "./components/ExportPanel";
@@ -33,12 +56,25 @@ export function App() {
   const [exportPreview, setExportPreview] = useState<ExportPreview>(null);
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const [projectStatus, setProjectStatus] = useState("");
+  const [modelTemplateSelection, setModelTemplateSelection] = useState("GPT-2");
+  const [templateBlockCount, setTemplateBlockCount] = useState(12);
+  const [searchQuery, setSearchQuery] = useState("");
   const dragStateRef = useRef<{ nodeId: string; pointerOffsetX: number; pointerOffsetY: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const loadInputRef = useRef<HTMLInputElement | null>(null);
 
   const graph: ModelGraph = useMemo(() => ({ nodes, edges, training }), [nodes, edges, training]);
+  const parameterSummary = useMemo(() => formatParameterCount(graph), [graph]);
   const issues = useMemo(() => validateGraph(graph), [graph]);
+  const normalizedExportGraph = useMemo(() => normalizeGraphForGenericExport(graph), [graph]);
+  const pytorchExportIssues = useMemo(
+    () => validateGraph(normalizedExportGraph.ok ? normalizedExportGraph.value : graph, "pytorch-export-valid"),
+    [graph, normalizedExportGraph]
+  );
+  const decoderExportIssues = useMemo(
+    () => validateGraph(normalizedExportGraph.ok ? normalizedExportGraph.value : graph, "decoder-training-valid"),
+    [graph, normalizedExportGraph]
+  );
   const selectedNode = selected?.kind === "node" ? nodes.find((node) => node.id === selected.nodeId) ?? null : null;
 
   const trainingWarnings = useMemo(() => {
@@ -55,25 +91,102 @@ export function App() {
     return warnings;
   }, [training]);
 
-  const exportedPyTorch = useMemo(() => {
+  const gpt2Ir = useMemo(() => {
     try {
-      return exportModelGraphToPyTorch(graph);
+      return { ok: true as const, value: mapModelGraphToGPT2Ir(graph) };
     } catch (error) {
-      return `# Export failed\n# ${error instanceof Error ? error.message : "Unknown export error"}`;
+      return { ok: false as const, error: error instanceof Error ? error.message : "Unknown GPT-2 mapping error" };
     }
   }, [graph]);
+
+  const llamaIr = useMemo(() => {
+    try {
+      return { ok: true as const, value: mapModelGraphToLlamaIr(graph) };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "Unknown LLaMA mapping error" };
+    }
+  }, [graph]);
+
+  const hybridIr = useMemo(() => {
+    try {
+      return { ok: true as const, value: mapModelGraphToHybridIr(graph) };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "Unknown hybrid mapping error" };
+    }
+  }, [graph]);
+
+  function summarizeValidationIssues(validationIssues: ValidationIssue[]): string {
+    if (validationIssues.length === 0) {
+      return "";
+    }
+
+    if (validationIssues.length === 1) {
+      return validationIssues[0]!.message;
+    }
+
+    return `${validationIssues[0]!.message} (${validationIssues.length - 1} more issue${validationIssues.length > 2 ? "s" : ""})`;
+  }
+
+  const exportedPyTorch = useMemo<SafeExport<string>>(() => {
+    if (!gpt2Ir.ok && !llamaIr.ok && !hybridIr.ok && (!normalizedExportGraph.ok || pytorchExportIssues.length > 0)) {
+      return {
+        ok: false,
+        error: normalizedExportGraph.ok ? summarizeValidationIssues(pytorchExportIssues) : normalizedExportGraph.error
+      };
+    }
+
+    try {
+      if (gpt2Ir.ok) {
+        return { ok: true, value: exportGPT2IrToPyTorch(gpt2Ir.value) };
+      }
+      if (llamaIr.ok) {
+        return { ok: true, value: exportLlamaIrToPyTorch(llamaIr.value) };
+      }
+      if (hybridIr.ok) {
+        return { ok: true, value: exportHybridIrToPyTorch(hybridIr.value) };
+      }
+      return { ok: true, value: exportModelGraphToPyTorch(normalizedExportGraph.ok ? normalizedExportGraph.value : graph) };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unknown export error"
+      };
+    }
+  }, [graph, pytorchExportIssues, gpt2Ir, llamaIr, hybridIr, normalizedExportGraph]);
 
   const exportedJson = useMemo(() => JSON.stringify(graph, null, 2), [graph]);
   const exportedProject = useMemo<SafeExport<ReturnType<typeof exportProjectFiles>>>(() => {
     if (trainingWarnings.length > 0) {
       return { ok: false, error: trainingWarnings[0]! };
     }
+    if (!gpt2Ir.ok && !llamaIr.ok && !hybridIr.ok && (!normalizedExportGraph.ok || decoderExportIssues.length > 0)) {
+      return {
+        ok: false,
+        error: normalizedExportGraph.ok ? summarizeValidationIssues(decoderExportIssues) : normalizedExportGraph.error
+      };
+    }
     try {
-      return { ok: true, value: exportProjectFiles(graph) };
+      if (gpt2Ir.ok) {
+        return { ok: true, value: exportGPT2IrProjectFiles(gpt2Ir.value, training) };
+      }
+      if (llamaIr.ok) {
+        return { ok: true, value: exportLlamaIrProjectFiles(llamaIr.value, training) };
+      }
+      if (hybridIr.ok) {
+        return { ok: true, value: exportHybridIrProjectFiles(hybridIr.value, training) };
+      }
+      return { ok: true, value: exportProjectFiles(normalizedExportGraph.ok ? normalizedExportGraph.value : graph) };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : "Unknown project export error" };
     }
-  }, [graph, trainingWarnings]);
+  }, [graph, trainingWarnings, decoderExportIssues, gpt2Ir, llamaIr, hybridIr, training, normalizedExportGraph]);
+
+  useEffect(() => {
+    const template = resolveTemplate(modelTemplateSelection);
+    if (template) {
+      setTemplateBlockCount(template.defaultBlockCount);
+    }
+  }, [modelTemplateSelection]);
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
@@ -121,6 +234,78 @@ export function App() {
     setSelected({ kind: "node", nodeId: nextNode.id });
     setConnectionError("");
     setProjectStatus("");
+  }
+
+  function applyPreset(presetId: string) {
+    const preset = graphPresets.find((entry) => entry.id === presetId);
+    if (!preset) {
+      setProjectStatus("Preset not found.");
+      return;
+    }
+
+    const presetGraph = preset.build();
+    setNodes(presetGraph.nodes);
+    setEdges(presetGraph.edges);
+    setTraining(presetGraph.training);
+    setSelected({ kind: "training" });
+    setPendingConnectionSourceId(null);
+    setConnectionError("");
+    setExportPreview(null);
+    setCopyStatus("idle");
+    setProjectStatus(`Loaded preset: ${preset.name}.`);
+  }
+
+  function importModelConfig() {
+    const template = resolveTemplate(modelTemplateSelection);
+    if (!template) {
+      setProjectStatus("Choose a supported architecture template.");
+      return;
+    }
+
+    try {
+      const blockCount = Math.max(1, Math.floor(templateBlockCount || 0));
+      if (template.family === "gpt2") {
+        const spec = buildGPT2ArchitectureSpec({
+          name: `${template.label} ${blockCount}-block`,
+          modelId: template.modelId,
+          numHiddenLayers: blockCount
+        });
+        const importedGraph = projectGPT2IrToModelGraph(spec);
+        setNodes(importedGraph.nodes);
+        setEdges(importedGraph.edges);
+        setTraining(importedGraph.training);
+        setSelected({ kind: "training" });
+        setPendingConnectionSourceId(null);
+        setConnectionError("");
+        setExportPreview(null);
+        setCopyStatus("idle");
+        setProjectStatus(`Loaded ${template.label} template with ${blockCount} block${blockCount === 1 ? "" : "s"}.`);
+        return;
+      }
+
+      if (template.family === "llama") {
+        const spec = buildLlamaArchitectureSpec({
+          name: `${template.label} ${blockCount}-block`,
+          modelId: template.modelId,
+          numHiddenLayers: blockCount
+        });
+        const importedGraph = projectLlamaIrToModelGraph(spec);
+        setNodes(importedGraph.nodes);
+        setEdges(importedGraph.edges);
+        setTraining(importedGraph.training);
+        setSelected({ kind: "training" });
+        setPendingConnectionSourceId(null);
+        setConnectionError("");
+        setExportPreview(null);
+        setCopyStatus("idle");
+        setProjectStatus(`Loaded ${template.label} template with ${blockCount} block${blockCount === 1 ? "" : "s"}.`);
+        return;
+      }
+
+      throw new Error(`Unsupported template family: ${template.family}`);
+    } catch (error) {
+      setProjectStatus(error instanceof Error ? error.message : "Failed to load template.");
+    }
   }
 
   function updateNodeConfig(nodeId: string, field: BlockField, rawValue: string) {
@@ -302,8 +487,16 @@ export function App() {
     <div className="app-shell">
       <PaletteSidebar
         projectStatus={projectStatus}
+        modelTemplateSelection={modelTemplateSelection}
+        templateBlockCount={templateBlockCount}
+        searchQuery={searchQuery}
         loadInputRef={loadInputRef}
         onAddNode={addNode}
+        onApplyPreset={applyPreset}
+        onModelTemplateSelectionChange={setModelTemplateSelection}
+        onImportModel={importModelConfig}
+        onTemplateBlockCountChange={setTemplateBlockCount}
+        onSearchQueryChange={setSearchQuery}
         onSave={saveProject}
         onLoadClick={() => loadInputRef.current?.click()}
         onLoadFile={loadProjectFromFile}
@@ -312,6 +505,7 @@ export function App() {
       <main className="workspace">
         <CanvasPanel
           canvasRef={canvasRef}
+          parameterSummary={parameterSummary}
           nodes={nodes}
           edges={edges}
           selected={selected}
@@ -360,12 +554,24 @@ export function App() {
             <h2>Issues</h2>
           </div>
           {issues.length === 0 ? <p className="success-copy">Graph looks valid at this layer.</p> : null}
-          {issues.map((issue) => (
-            <div key={`${issue.code}-${issue.message}-${issue.nodeId ?? ""}-${issue.edgeId ?? ""}`} className="issue-card">
-              <strong>{issue.code}</strong>
-              <span>{issue.message}</span>
+          {issues.map((issue) => {
+            const formattedIssue = formatValidationIssue(issue);
+            return (
+            <div
+              key={`${issue.code}-${issue.message}-${issue.nodeId ?? ""}-${issue.edgeId ?? ""}`}
+              className={`issue-card ${formattedIssue.severity}`}
+            >
+              <div className="issue-header">
+                <strong>{formattedIssue.title}</strong>
+                <span className={`issue-badge ${formattedIssue.severity}`}>{formattedIssue.severity}</span>
+              </div>
+              <span>{formattedIssue.message}</span>
+              {(issue.nodeId ?? issue.edgeId) ? (
+                <span className="issue-location">{issue.nodeId ? `Node: ${issue.nodeId}` : `Edge: ${issue.edgeId}`}</span>
+              ) : null}
             </div>
-          ))}
+            );
+          })}
         </section>
       </aside>
     </div>

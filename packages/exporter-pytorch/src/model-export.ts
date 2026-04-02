@@ -63,37 +63,76 @@ function renderForward(ctx: ExportContext): string[] {
     '            raise ValueError(f"Sequence length {seq_len} exceeds configured maximum {self.seq_len}")'
   ];
 
-  let currentTensor = "input_ids";
-  let embeddingSeen = false;
+  const incomingByNode = new Map<string, string[]>();
+  for (const node of ctx.graph.nodes) {
+    incomingByNode.set(node.id, []);
+  }
+  for (const edge of ctx.graph.edges) {
+    incomingByNode.get(edge.target)?.push(edge.source);
+  }
+
+  const tensorByNode = new Map<string, string>();
 
   for (const node of ctx.orderedNodes) {
     const name = sanitizeNodeId(node.id);
+    const tensorName = `tensor_${name}`;
+    const incoming = incomingByNode.get(node.id) ?? [];
 
     if (node.type === "Input") {
+      tensorByNode.set(node.id, "input_ids");
       continue;
     }
 
     if (node.type === "Embedding") {
       lines.push("        positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0).expand(bsz, seq_len)");
-      lines.push(`        x = self.${name}_token_emb(input_ids) + self.${name}_pos_emb(positions)`);
-      currentTensor = "x";
-      embeddingSeen = true;
+      lines.push(`        ${tensorName} = self.${name}_token_emb(input_ids) + self.${name}_pos_emb(positions)`);
+      tensorByNode.set(node.id, tensorName);
       continue;
     }
 
-    if (!embeddingSeen) {
-      throw new Error("Project export requires Embedding to appear before sequence-processing blocks.");
+    if (node.type === "Add") {
+      if (incoming.length !== 2) {
+        throw new Error("Add export currently requires exactly two incoming edges.");
+      }
+      const left = tensorByNode.get(incoming[0]!);
+      const right = tensorByNode.get(incoming[1]!);
+      if (!left || !right) {
+        throw new Error("Add export requires both inputs to be available earlier in topological order.");
+      }
+      lines.push(`        ${tensorName} = ${left} + ${right}`);
+      tensorByNode.set(node.id, tensorName);
+      continue;
     }
 
     if (node.type === "Output") {
-      lines.push(`        return self.lm_head(${currentTensor})`);
+      if (incoming.length !== 1) {
+        throw new Error("Output export currently requires exactly one incoming edge.");
+      }
+      const sourceTensor = tensorByNode.get(incoming[0]!);
+      if (!sourceTensor) {
+        throw new Error("Output export requires its source tensor to be available.");
+      }
+      lines.push(`        return self.lm_head(${sourceTensor})`);
       return lines;
     }
 
-    lines.push(`        ${currentTensor} = self.${name}(${currentTensor})`);
+    if (incoming.length !== 1) {
+      throw new Error(`${node.type} export currently requires exactly one incoming edge.`);
+    }
+    const sourceTensor = tensorByNode.get(incoming[0]!);
+    if (!sourceTensor) {
+      throw new Error(`${node.type} export requires its source tensor to be available.`);
+    }
+    lines.push(`        ${tensorName} = self.${name}(${sourceTensor})`);
+    tensorByNode.set(node.id, tensorName);
   }
 
-  lines.push(`        return self.lm_head(${currentTensor})`);
+  const lastNode = ctx.orderedNodes[ctx.orderedNodes.length - 1];
+  const lastTensor = lastNode ? tensorByNode.get(lastNode.id) : null;
+  if (!lastTensor) {
+    throw new Error("Project export could not resolve a final tensor.");
+  }
+  lines.push(`        return self.lm_head(${lastTensor})`);
   return lines;
 }
 

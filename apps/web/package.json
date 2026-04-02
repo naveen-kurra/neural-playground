@@ -6,6 +6,7 @@
   "dependencies": {
     "@neural-playground/block-schema": "*",
     "@neural-playground/exporter-pytorch": "*",
+    "@neural-playground/ir-schema": "*",
     "@neural-playground/validator": "*",
     "jszip": "^3.10.1",
     "react": "^19.0.0",

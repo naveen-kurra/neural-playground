@@ -79,6 +79,195 @@ export const blockDefinitions: BlockDefinition[] = [
     ]
   },
   {
+    type: "GPT2TokenEmbedding",
+    label: "GPT-2 Token Embedding",
+    category: "embedding",
+    description: "GPT-2 token embedding table (`wte`).",
+    inputs: ["tokens"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "tokens",
+        dims: ["seq_len"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    ruleSpecs: [
+      {
+        code: "invalid_vocab_size",
+        severity: "error",
+        description: "Vocab size must be positive."
+      },
+      {
+        code: "invalid_embedding_dim",
+        severity: "error",
+        description: "Embedding dimension must be positive."
+      }
+    ],
+    fields: [
+      {
+        key: "vocabSize",
+        label: "Vocab Size",
+        type: "number",
+        defaultValue: 50257
+      },
+      {
+        key: "embeddingDim",
+        label: "Embedding Dim",
+        type: "number",
+        defaultValue: 768
+      }
+    ]
+  },
+  {
+    type: "LlamaTokenEmbedding",
+    label: "LLaMA Token Embedding",
+    category: "embedding",
+    description: "LLaMA token embedding table (`embed_tokens`).",
+    inputs: ["tokens"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "tokens",
+        dims: ["seq_len"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    ruleSpecs: [
+      {
+        code: "invalid_vocab_size",
+        severity: "error",
+        description: "Vocab size must be positive."
+      },
+      {
+        code: "invalid_embedding_dim",
+        severity: "error",
+        description: "Embedding dimension must be positive."
+      }
+    ],
+    fields: [
+      {
+        key: "vocabSize",
+        label: "Vocab Size",
+        type: "number",
+        defaultValue: 32000
+      },
+      {
+        key: "embeddingDim",
+        label: "Hidden Size",
+        type: "number",
+        defaultValue: 4096
+      }
+    ]
+  },
+  {
+    type: "GPT2PositionEmbedding",
+    label: "GPT-2 Position Embedding",
+    category: "embedding",
+    description: "GPT-2 learned position embedding table (`wpe`).",
+    inputs: ["tokens"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "tokens",
+        dims: ["seq_len"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    ruleSpecs: [
+      {
+        code: "invalid_sequence_length",
+        severity: "error",
+        description: "Maximum positions must be greater than 1."
+      },
+      {
+        code: "invalid_embedding_dim",
+        severity: "error",
+        description: "Embedding dimension must be positive."
+      }
+    ],
+    fields: [
+      {
+        key: "sequenceLength",
+        label: "Max Positions",
+        type: "number",
+        defaultValue: 1024
+      },
+      {
+        key: "embeddingDim",
+        label: "Embedding Dim",
+        type: "number",
+        defaultValue: 768
+      }
+    ]
+  },
+  {
+    type: "Add",
+    label: "Add",
+    category: "merge",
+    description: "Merges matching sequence tensors by elementwise addition.",
+    inputs: ["sequence"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    ruleSpecs: [],
+    fields: []
+  },
+  {
+    type: "Dropout",
+    label: "Dropout",
+    category: "regularization",
+    description: "Applies dropout to sequence activations.",
+    inputs: ["sequence"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    ruleSpecs: [],
+    fields: [
+      {
+        key: "dropout",
+        label: "Dropout",
+        type: "number",
+        defaultValue: 0.1
+      }
+    ]
+  },
+  {
     type: "TransformerBlock",
     label: "Transformer Block",
     category: "transformer",
@@ -149,6 +338,148 @@ export const blockDefinitions: BlockDefinition[] = [
         label: "Pre-LN",
         type: "boolean",
         defaultValue: true
+      }
+    ]
+  },
+  {
+    type: "GPT2Block",
+    label: "GPT-2 Block",
+    category: "transformer",
+    description: "GPT-2 decoder block with ln_1, masked attention, ln_2, and MLP residual path.",
+    inputs: ["sequence"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    ruleSpecs: [
+      {
+        code: "invalid_d_model",
+        severity: "error",
+        description: "Model dimension must be positive."
+      },
+      {
+        code: "invalid_num_heads",
+        severity: "error",
+        description: "Number of heads must be positive."
+      },
+      {
+        code: "heads_dimension_mismatch",
+        severity: "error",
+        description: "Model dimension must be divisible by the number of heads."
+      },
+      {
+        code: "invalid_ffn_hidden",
+        severity: "error",
+        description: "MLP hidden dimension must be positive."
+      }
+    ],
+    fields: [
+      {
+        key: "dModel",
+        label: "Model Dim",
+        type: "number",
+        defaultValue: 768
+      },
+      {
+        key: "numHeads",
+        label: "Heads",
+        type: "number",
+        defaultValue: 12
+      },
+      {
+        key: "ffnHidden",
+        label: "MLP Hidden",
+        type: "number",
+        defaultValue: 3072
+      },
+      {
+        key: "dropout",
+        label: "Residual Dropout",
+        type: "number",
+        defaultValue: 0.1
+      }
+    ]
+  },
+  {
+    type: "LlamaBlock",
+    label: "LLaMA Block",
+    category: "transformer",
+    description: "LLaMA decoder block with RMSNorm, RoPE attention, and gated MLP.",
+    inputs: ["sequence"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    ruleSpecs: [
+      {
+        code: "invalid_d_model",
+        severity: "error",
+        description: "Model dimension must be positive."
+      },
+      {
+        code: "invalid_num_heads",
+        severity: "error",
+        description: "Number of heads must be positive."
+      },
+      {
+        code: "heads_dimension_mismatch",
+        severity: "error",
+        description: "Model dimension must be divisible by the number of heads."
+      },
+      {
+        code: "invalid_ffn_hidden",
+        severity: "error",
+        description: "MLP hidden dimension must be positive."
+      }
+    ],
+    fields: [
+      {
+        key: "dModel",
+        label: "Hidden Size",
+        type: "number",
+        defaultValue: 4096
+      },
+      {
+        key: "numHeads",
+        label: "Attention Heads",
+        type: "number",
+        defaultValue: 32
+      },
+      {
+        key: "numKeyValueHeads",
+        label: "KV Heads",
+        type: "number",
+        defaultValue: 32
+      },
+      {
+        key: "ffnHidden",
+        label: "Intermediate Size",
+        type: "number",
+        defaultValue: 11008
+      },
+      {
+        key: "ropeTheta",
+        label: "RoPE Theta",
+        type: "number",
+        defaultValue: 10000
       }
     ]
   },
@@ -235,6 +566,76 @@ export const blockDefinitions: BlockDefinition[] = [
     ]
   },
   {
+    type: "GPT2FinalLayerNorm",
+    label: "GPT-2 Final LayerNorm",
+    category: "normalization",
+    description: "Final GPT-2 layer normalization (`ln_f`).",
+    inputs: ["sequence"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    ruleSpecs: [
+      {
+        code: "unknown_layernorm_dim",
+        severity: "warning",
+        description: "LayerNorm dimension should be inferable from incoming connections."
+      }
+    ],
+    fields: [
+      {
+        key: "epsilon",
+        label: "Epsilon",
+        type: "number",
+        defaultValue: 0.00001
+      }
+    ]
+  },
+  {
+    type: "LlamaFinalRMSNorm",
+    label: "LLaMA Final RMSNorm",
+    category: "normalization",
+    description: "Final LLaMA RMSNorm (`norm`).",
+    inputs: ["sequence"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    ruleSpecs: [
+      {
+        code: "unknown_layernorm_dim",
+        severity: "warning",
+        description: "Final norm dimension should be inferable from incoming connections."
+      }
+    ],
+    fields: [
+      {
+        key: "epsilon",
+        label: "RMSNorm Epsilon",
+        type: "number",
+        defaultValue: 0.000001
+      }
+    ]
+  },
+  {
     type: "Softmax",
     label: "Softmax",
     category: "activation",
@@ -260,6 +661,88 @@ export const blockDefinitions: BlockDefinition[] = [
         label: "Axis",
         type: "number",
         defaultValue: -1
+      }
+    ]
+  },
+  {
+    type: "GPT2LMHead",
+    label: "GPT-2 LM Head",
+    category: "output",
+    description: "Projects GPT-2 hidden states into token logits, usually tied to `wte`.",
+    inputs: ["sequence"],
+    outputs: ["logits"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "logits",
+        dims: ["seq_len", "vocab_size"]
+      }
+    ],
+    ruleSpecs: [
+      {
+        code: "unknown_output_dim",
+        severity: "warning",
+        description: "LM head dimension should be inferable from incoming connections."
+      }
+    ],
+    fields: [
+      {
+        key: "vocabSize",
+        label: "Vocab Size",
+        type: "number",
+        defaultValue: 50257
+      },
+      {
+        key: "tiedWeights",
+        label: "Tie Weights",
+        type: "boolean",
+        defaultValue: true
+      }
+    ]
+  },
+  {
+    type: "LlamaLMHead",
+    label: "LLaMA LM Head",
+    category: "output",
+    description: "Projects LLaMA hidden states to vocabulary logits.",
+    inputs: ["sequence"],
+    outputs: ["logits"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "logits",
+        dims: ["seq_len", "vocab_size"]
+      }
+    ],
+    ruleSpecs: [
+      {
+        code: "unknown_output_dim",
+        severity: "warning",
+        description: "LM head dimension should be inferable from incoming connections."
+      }
+    ],
+    fields: [
+      {
+        key: "vocabSize",
+        label: "Vocab Size",
+        type: "number",
+        defaultValue: 32000
+      },
+      {
+        key: "tiedWeights",
+        label: "Tie Weights",
+        type: "boolean",
+        defaultValue: false
       }
     ]
   },

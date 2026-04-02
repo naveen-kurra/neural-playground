@@ -4,15 +4,28 @@ export type BlockCategory =
   | "transformer"
   | "feedforward"
   | "normalization"
+  | "merge"
+  | "regularization"
   | "activation"
   | "output";
 
 export type BlockType =
   | "Input"
   | "Embedding"
+  | "LlamaTokenEmbedding"
+  | "GPT2TokenEmbedding"
+  | "GPT2PositionEmbedding"
+  | "Add"
+  | "Dropout"
   | "TransformerBlock"
+  | "LlamaBlock"
+  | "GPT2Block"
   | "MLP"
   | "LayerNorm"
+  | "LlamaFinalRMSNorm"
+  | "GPT2FinalLayerNorm"
+  | "LlamaLMHead"
+  | "GPT2LMHead"
   | "Softmax"
   | "Output";
 
@@ -58,4 +71,3 @@ export type ModelGraph = {
   edges: BlockEdge[];
   training: TrainingConfig;
 };
-

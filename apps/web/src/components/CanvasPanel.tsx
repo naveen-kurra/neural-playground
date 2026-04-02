@@ -5,6 +5,7 @@ import type { SelectedState } from "../app/types";
 
 type CanvasPanelProps = {
   canvasRef: RefObject<HTMLDivElement | null>;
+  parameterSummary: string;
   nodes: BlockNode[];
   edges: BlockEdge[];
   selected: SelectedState;
@@ -23,6 +24,7 @@ type CanvasPanelProps = {
 export function CanvasPanel(props: CanvasPanelProps) {
   const {
     canvasRef,
+    parameterSummary,
     nodes,
     edges,
     selected,
@@ -46,6 +48,7 @@ export function CanvasPanel(props: CanvasPanelProps) {
           <h2>Model Canvas</h2>
         </div>
         <div className="canvas-actions">
+          <div className="metric-pill">{parameterSummary}</div>
           {pendingConnectionSourceId ? (
             <button type="button" className="ghost-button" onClick={onCancelConnection}>
               Cancel Connect

@@ -48,9 +48,17 @@ export function getInputSequenceDim(
 ): number | null {
   switch (node.type) {
     case "TransformerBlock":
+    case "GPT2Block":
+    case "LlamaBlock":
       return numberConfig(node.config.dModel);
     case "LayerNorm":
+    case "LlamaFinalRMSNorm":
+    case "GPT2FinalLayerNorm":
     case "MLP":
+    case "Add":
+    case "Dropout":
+    case "LlamaLMHead":
+    case "GPT2LMHead":
     case "Output":
       return inferNodeSequenceDim(node, inferredSequenceDims);
     default:
@@ -64,11 +72,20 @@ export function getOutputSequenceDim(
 ): number | null {
   switch (node.type) {
     case "Embedding":
+    case "LlamaTokenEmbedding":
+    case "GPT2TokenEmbedding":
+    case "GPT2PositionEmbedding":
       return numberConfig(node.config.embeddingDim);
     case "TransformerBlock":
+    case "GPT2Block":
+    case "LlamaBlock":
       return numberConfig(node.config.dModel);
     case "LayerNorm":
+    case "LlamaFinalRMSNorm":
+    case "GPT2FinalLayerNorm":
     case "MLP":
+    case "Add":
+    case "Dropout":
       return inferNodeSequenceDim(node, inferredSequenceDims);
     default:
       return null;
@@ -78,8 +95,13 @@ export function getOutputSequenceDim(
 function getExplicitSequenceDim(node: ModelGraph["nodes"][number]): number | null {
   switch (node.type) {
     case "Embedding":
+    case "LlamaTokenEmbedding":
+    case "GPT2TokenEmbedding":
+    case "GPT2PositionEmbedding":
       return numberConfig(node.config.embeddingDim);
     case "TransformerBlock":
+    case "GPT2Block":
+    case "LlamaBlock":
       return numberConfig(node.config.dModel);
     default:
       return null;
@@ -103,4 +125,3 @@ function inferFromIncoming(
   const first = dims[0]!;
   return dims.every((dim) => dim === first) ? first : null;
 }
-

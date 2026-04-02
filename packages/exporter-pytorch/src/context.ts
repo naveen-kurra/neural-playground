@@ -75,8 +75,12 @@ export function buildContext(graph: ModelGraph): ExportContext {
   }
 
   const warnings: string[] = [];
-  if (graph.nodes.some((node) => graph.edges.filter((edge) => edge.target === node.id).length > 1)) {
-    warnings.push("Branch merges are flattened in export order. Full multi-input graph execution is not implemented yet.");
+  if (
+    graph.nodes.some(
+      (node) => graph.edges.filter((edge) => edge.target === node.id).length > 1 && node.type !== "Add"
+    )
+  ) {
+    warnings.push("Non-Add branch merges are flattened in export order. Full multi-input graph execution is not implemented yet.");
   }
 
   const firstTransformer = orderedNodes.find((node) => node.type === "TransformerBlock");
@@ -90,6 +94,7 @@ export function buildContext(graph: ModelGraph): ExportContext {
   }
 
   return {
+    graph,
     orderedNodes,
     warnings,
     vocabSize: Number(embeddingNode.config.vocabSize ?? 32000),

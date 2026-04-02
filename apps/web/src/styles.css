@@ -157,12 +157,38 @@ button {
 }
 
 .block-grid {
-  flex: 1;
   display: grid;
   gap: 12px;
+  padding-right: 6px;
+}
+
+.palette-scroll {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding-right: 6px;
+}
+
+.preset-section {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.preset-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.preset-card {
+  border-color: rgba(115, 181, 255, 0.28);
+  background: rgba(12, 28, 47, 0.96);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .block-card,
@@ -220,6 +246,19 @@ button {
 .canvas-actions {
   display: flex;
   gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.metric-pill {
+  padding: 10px 14px;
+  border: 1px solid rgba(115, 181, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(12, 28, 47, 0.96);
+  color: #dce7f8;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .connection-hint {
@@ -422,8 +461,46 @@ input {
   margin-top: 10px;
   padding: 12px 14px;
   border-radius: 14px;
+  border: 1px solid rgba(222, 151, 87, 0.24);
   background: rgba(67, 40, 17, 0.85);
   color: #f0d8b4;
+}
+
+.issue-card.warning {
+  border-color: rgba(123, 163, 216, 0.2);
+  background: rgba(21, 37, 59, 0.85);
+  color: #d2def3;
+}
+
+.issue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.issue-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.issue-badge.error {
+  background: rgba(214, 98, 84, 0.18);
+  color: #ffb7b0;
+}
+
+.issue-badge.warning {
+  background: rgba(118, 193, 255, 0.14);
+  color: #9fd2ff;
+}
+
+.issue-location {
+  color: #95a9c8;
+  font-size: 0.78rem;
 }
 
 pre {

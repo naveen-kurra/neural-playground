@@ -2,7 +2,7 @@ import type { CopyStatus, ExportPreview, SafeExport } from "../app/types";
 
 type ExportPanelProps<TProjectFiles> = {
   exportedJson: string;
-  exportedPyTorch: string;
+  exportedPyTorch: SafeExport<string>;
   exportedProject: SafeExport<TProjectFiles>;
   exportPreview: ExportPreview;
   copyStatus: CopyStatus;
@@ -53,14 +53,25 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
         <div className="export-card">
           <strong>PyTorch Model</strong>
           <span>Generated `model.py` style export aligned to the current graph.</span>
+          {!exportedPyTorch.ok ? <span className="export-warning">Unavailable: {exportedPyTorch.error}</span> : null}
           <div className="export-buttons">
-            <button type="button" className="ghost-button" onClick={() => onOpenPreview("pytorch")}>
+            <button type="button" className="ghost-button" onClick={() => onOpenPreview("pytorch")} disabled={!exportedPyTorch.ok}>
               View
             </button>
-            <button type="button" className="ghost-button" onClick={() => onCopy(exportedPyTorch, "pytorch")}>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => exportedPyTorch.ok && onCopy(exportedPyTorch.value, "pytorch")}
+              disabled={!exportedPyTorch.ok}
+            >
               Copy
             </button>
-            <button type="button" className="ghost-button" onClick={() => onDownloadText("model.py", exportedPyTorch)}>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => exportedPyTorch.ok && onDownloadText("model.py", exportedPyTorch.value)}
+              disabled={!exportedPyTorch.ok}
+            >
               Download
             </button>
           </div>
@@ -96,7 +107,7 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
               Close
             </button>
           </div>
-          <pre>{exportPreview === "json" ? exportedJson : exportedPyTorch}</pre>
+          <pre>{exportPreview === "json" ? exportedJson : exportedPyTorch.ok ? exportedPyTorch.value : exportedPyTorch.error}</pre>
         </div>
       ) : null}
     </section>
