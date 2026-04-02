@@ -7,6 +7,11 @@ type ExportPanelProps<TProjectFiles> = {
   exportedProject: SafeExport<TProjectFiles>;
   exportPreview: ExportPreview;
   copyStatus: CopyStatus;
+  jsonEditorValue: string;
+  jsonEditorStatus: string;
+  jsonEditorCanApply: boolean;
+  onJsonEditorChange: (contents: string) => void;
+  onApplyJsonEditor: () => void;
   onOpenPreview: (preview: ExportPreview) => void;
   onCopy: (contents: string, artifact: "json" | "pytorch") => void;
   onDownloadText: (filename: string, contents: string) => void;
@@ -20,6 +25,11 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
     exportedProject,
     exportPreview,
     copyStatus,
+    jsonEditorValue,
+    jsonEditorStatus,
+    jsonEditorCanApply,
+    onJsonEditorChange,
+    onApplyJsonEditor,
     onOpenPreview,
     onCopy,
     onDownloadText,
@@ -27,9 +37,7 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
   } = props;
 
   const previewTitle = exportPreview === "json" ? "Graph JSON" : "PyTorch Model";
-  const previewContent = exportPreview === "json"
-    ? exportedJson
-    : exportedPyTorch.ok ? exportedPyTorch.value : exportedPyTorch.error;
+  const previewContent = exportedPyTorch.ok ? exportedPyTorch.value : exportedPyTorch.error;
 
   return (
     <section className="export-panel">
@@ -87,8 +95,9 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
               <div className="preview-modal-actions">
                 {exportPreview === "json" && (
                   <>
-                    <button type="button" className="ghost-button" onClick={() => onCopy(exportedJson, "json")}>Copy</button>
-                    <button type="button" className="ghost-button" onClick={() => onDownloadText("model-graph.json", exportedJson)}>Download</button>
+                    <button type="button" className="ghost-button" onClick={() => onCopy(jsonEditorValue, "json")}>Copy</button>
+                    <button type="button" className="ghost-button" onClick={() => onDownloadText("model-graph.json", jsonEditorValue)}>Download</button>
+                    <button type="button" className="ghost-button" onClick={onApplyJsonEditor} disabled={!jsonEditorCanApply}>Apply to Graph</button>
                   </>
                 )}
                 {exportPreview === "pytorch" && exportedPyTorch.ok && (
@@ -100,7 +109,19 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
                 <button type="button" className="ghost-button" onClick={() => onOpenPreview(null)}>Close</button>
               </div>
             </div>
-            <pre className="preview-modal-content">{previewContent}</pre>
+            {exportPreview === "json" ? (
+              <div className="preview-modal-content json-editor-wrap">
+                <p className={`json-editor-status${jsonEditorCanApply ? " success" : " error"}`}>{jsonEditorStatus}</p>
+                <textarea
+                  className="json-editor"
+                  value={jsonEditorValue}
+                  spellCheck={false}
+                  onChange={(event) => onJsonEditorChange(event.target.value)}
+                />
+              </div>
+            ) : (
+              <pre className="preview-modal-content">{previewContent}</pre>
+            )}
           </div>
         </div>,
         document.body

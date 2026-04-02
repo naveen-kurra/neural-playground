@@ -246,6 +246,36 @@ button {
   white-space: pre;
 }
 
+.json-editor-wrap {
+  display: grid;
+  gap: 10px;
+  white-space: normal;
+}
+
+.json-editor-status {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #ffb7b0;
+}
+
+.json-editor-status.success {
+  color: #8fd1a3;
+}
+
+.json-editor {
+  width: 100%;
+  min-height: 340px;
+  padding: 12px;
+  border: 1px solid rgba(135, 155, 191, 0.22);
+  border-radius: 12px;
+  background: rgba(16, 28, 44, 0.92);
+  color: #d3ddec;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  resize: vertical;
+}
+
 .copy-status {
   margin: 12px 0 0;
   color: #8fd1a3;

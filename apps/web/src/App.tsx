@@ -28,7 +28,7 @@ import { resolveTemplate } from "./app/model-templates";
 import { getRouteFromHash, navigateToRoute, type AppRoute } from "./app/navigation";
 import { formatParameterCount } from "./app/parameter-estimator";
 import { graphPresets } from "./app/presets";
-import { readProjectFromInput } from "./app/project";
+import { readProjectFromInput, validateProjectDocument } from "./app/project";
 import type { CopyStatus, ExportPreview, ProjectDocument, SafeExport, SelectedState } from "./app/types";
 import { formatValidationIssue } from "./app/validation";
 import { CanvasPanel } from "./components/CanvasPanel";
@@ -38,19 +38,36 @@ import { PaletteSidebar } from "./components/PaletteSidebar";
 import { PrunePage } from "./components/PrunePage";
 import { TrainingInspector } from "./components/TrainingInspector";
 
+type HistorySnapshot = {
+  nodes: BlockNode[];
+  edges: BlockEdge[];
+  training: ModelGraph["training"];
+};
+
+type JsonEditorValidation = {
+  ok: boolean;
+  message: string;
+  graph: ModelGraph | null;
+};
+
 export function App() {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromHash(window.location.hash));
   const initialNodes = useMemo(
     () => [createNode("Input", 0), createNode("Embedding", 1), createNode("TransformerBlock", 2), createNode("Output", 3)],
     []
   );
+  const initialEdges = useMemo<BlockEdge[]>(
+    () => [
+      { id: "edge-1", source: initialNodes[0]!.id, target: initialNodes[1]!.id },
+      { id: "edge-2", source: initialNodes[1]!.id, target: initialNodes[2]!.id },
+      { id: "edge-3", source: initialNodes[2]!.id, target: initialNodes[3]!.id }
+    ],
+    [initialNodes]
+  );
+  const initialTraining = useMemo(() => defaultTrainingConfig(), []);
   const [nodes, setNodes] = useState<BlockNode[]>(initialNodes);
-  const [edges, setEdges] = useState<BlockEdge[]>([
-    { id: "edge-1", source: initialNodes[0]!.id, target: initialNodes[1]!.id },
-    { id: "edge-2", source: initialNodes[1]!.id, target: initialNodes[2]!.id },
-    { id: "edge-3", source: initialNodes[2]!.id, target: initialNodes[3]!.id }
-  ]);
-  const [training, setTraining] = useState(defaultTrainingConfig);
+  const [edges, setEdges] = useState<BlockEdge[]>(initialEdges);
+  const [training, setTraining] = useState(initialTraining);
   const [selected, setSelected] = useState<SelectedState>({ kind: "training" });
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -68,6 +85,12 @@ export function App() {
   const [modelTemplateSelection, setModelTemplateSelection] = useState("GPT-2");
   const [templateBlockCount, setTemplateBlockCount] = useState(12);
   const [searchQuery, setSearchQuery] = useState("");
+  const [jsonEditorText, setJsonEditorText] = useState("");
+  const [jsonEditorValidation, setJsonEditorValidation] = useState<JsonEditorValidation>({
+    ok: false,
+    message: "Open Graph JSON to edit and apply changes.",
+    graph: null
+  });
   const dragStateRef = useRef<{ nodeId: string; pointerOffsetX: number; pointerOffsetY: number } | null>(null);
   const dragMovedRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -83,23 +106,21 @@ export function App() {
   }, []);
 
   // History for undo/redo — all refs so event-listener closures are always fresh
-  const historyRef = useRef<Array<{ nodes: BlockNode[]; edges: BlockEdge[] }>>([
-    { nodes: initialNodes, edges: [
-      { id: "edge-1", source: initialNodes[0]!.id, target: initialNodes[1]!.id },
-      { id: "edge-2", source: initialNodes[1]!.id, target: initialNodes[2]!.id },
-      { id: "edge-3", source: initialNodes[2]!.id, target: initialNodes[3]!.id }
-    ]}
+  const historyRef = useRef<HistorySnapshot[]>([
+    { nodes: initialNodes, edges: initialEdges, training: initialTraining }
   ]);
   const historyPosRef = useRef(0);
   const [historyPos, setHistoryPos] = useState(0); // drives canUndo/canRedo re-renders
   const nodesRef = useRef(initialNodes);
-  const edgesRef = useRef(historyRef.current[0]!.edges);
+  const edgesRef = useRef(initialEdges);
+  const trainingRef = useRef(initialTraining);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { edgesRef.current = edges; }, [edges]);
+  useEffect(() => { trainingRef.current = training; }, [training]);
 
-  const pushHistory = useCallback((nextNodes: BlockNode[], nextEdges: BlockEdge[]) => {
+  const pushHistory = useCallback((nextNodes: BlockNode[], nextEdges: BlockEdge[], nextTraining: ModelGraph["training"] = trainingRef.current) => {
     const trimmed = historyRef.current.slice(0, historyPosRef.current + 1);
-    trimmed.push({ nodes: nextNodes, edges: nextEdges });
+    trimmed.push({ nodes: nextNodes, edges: nextEdges, training: nextTraining });
     if (trimmed.length > 100) trimmed.shift();
     historyRef.current = trimmed;
     historyPosRef.current = trimmed.length - 1;
@@ -112,6 +133,7 @@ export function App() {
     const snap = historyRef.current[newPos]!;
     setNodes(snap.nodes);
     setEdges(snap.edges);
+    setTraining(snap.training);
     historyPosRef.current = newPos;
     setHistoryPos(newPos);
     setSelected({ kind: "training" });
@@ -123,6 +145,7 @@ export function App() {
     const snap = historyRef.current[newPos]!;
     setNodes(snap.nodes);
     setEdges(snap.edges);
+    setTraining(snap.training);
     historyPosRef.current = newPos;
     setHistoryPos(newPos);
   }, []);
@@ -210,6 +233,51 @@ export function App() {
     }
 
     return `${validationIssues[0]!.message} (${validationIssues.length - 1} more issue${validationIssues.length > 2 ? "s" : ""})`;
+  }
+
+  function validateJsonEditorContents(contents: string): JsonEditorValidation {
+    const trimmed = contents.trim();
+    if (!trimmed) {
+      return { ok: false, message: "JSON editor is empty.", graph: null };
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? `JSON parse error: ${error.message}` : "JSON parse error.",
+        graph: null
+      };
+    }
+
+    try {
+      const document = validateProjectDocument(parsed);
+      const validationIssues = validateGraph(document.graph);
+      const validationErrors = validationIssues.filter((issue) => formatValidationIssue(issue).severity === "error");
+      if (validationErrors.length > 0) {
+        return {
+          ok: false,
+          message: `Graph validation failed: ${summarizeValidationIssues(validationErrors)}`,
+          graph: null
+        };
+      }
+
+      return {
+        ok: true,
+        message: validationIssues.length > 0
+          ? `JSON is valid and can be applied (${validationIssues.length} warning${validationIssues.length === 1 ? "" : "s"}).`
+          : "JSON is valid and can be applied.",
+        graph: document.graph
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Invalid project JSON.",
+        graph: null
+      };
+    }
   }
 
   const exportedPyTorch = useMemo<SafeExport<string>>(() => {
@@ -352,7 +420,7 @@ export function App() {
     setNodes(presetGraph.nodes);
     setEdges(presetGraph.edges);
     setTraining(presetGraph.training);
-    historyRef.current = [{ nodes: presetGraph.nodes, edges: presetGraph.edges }];
+    historyRef.current = [{ nodes: presetGraph.nodes, edges: presetGraph.edges, training: presetGraph.training }];
     historyPosRef.current = 0;
     setHistoryPos(0);
     setSelected({ kind: "training" });
@@ -382,7 +450,7 @@ export function App() {
         setNodes(importedGraph.nodes);
         setEdges(importedGraph.edges);
         setTraining(importedGraph.training);
-        historyRef.current = [{ nodes: importedGraph.nodes, edges: importedGraph.edges }];
+        historyRef.current = [{ nodes: importedGraph.nodes, edges: importedGraph.edges, training: importedGraph.training }];
         historyPosRef.current = 0;
         setHistoryPos(0);
         setSelected({ kind: "training" });
@@ -404,7 +472,7 @@ export function App() {
         setNodes(importedGraph.nodes);
         setEdges(importedGraph.edges);
         setTraining(importedGraph.training);
-        historyRef.current = [{ nodes: importedGraph.nodes, edges: importedGraph.edges }];
+        historyRef.current = [{ nodes: importedGraph.nodes, edges: importedGraph.edges, training: importedGraph.training }];
         historyPosRef.current = 0;
         setHistoryPos(0);
         setSelected({ kind: "training" });
@@ -528,7 +596,11 @@ export function App() {
       setNodes(result.document.graph.nodes);
       setEdges(result.document.graph.edges);
       setTraining(result.document.graph.training);
-      historyRef.current = [{ nodes: result.document.graph.nodes, edges: result.document.graph.edges }];
+      historyRef.current = [{
+        nodes: result.document.graph.nodes,
+        edges: result.document.graph.edges,
+        training: result.document.graph.training
+      }];
       historyPosRef.current = 0;
       setHistoryPos(0);
       setSelected({ kind: "training" });
@@ -570,6 +642,46 @@ export function App() {
     } catch {
       setCopyStatus("copy-failed");
     }
+  }
+
+  function openExportPreview(preview: ExportPreview) {
+    if (preview === "json") {
+      setJsonEditorText(exportedJson);
+      setJsonEditorValidation(validateJsonEditorContents(exportedJson));
+    }
+    setExportPreview(preview);
+  }
+
+  function handleJsonEditorChange(nextContents: string) {
+    setJsonEditorText(nextContents);
+    setJsonEditorValidation(validateJsonEditorContents(nextContents));
+  }
+
+  function applyJsonEditorChanges() {
+    if (!jsonEditorValidation.ok || !jsonEditorValidation.graph) {
+      return;
+    }
+
+    const nextGraph = jsonEditorValidation.graph;
+    setNodes(nextGraph.nodes);
+    setEdges(nextGraph.edges);
+    setTraining(nextGraph.training);
+    pushHistory(nextGraph.nodes, nextGraph.edges, nextGraph.training);
+    setSelected({ kind: "training" });
+    setSelectedEdgeId(null);
+    setPendingConnectionSourceId(null);
+    setConnectionError("");
+    setCopyStatus("idle");
+    setProjectStatus("Applied Graph JSON changes.");
+
+    const normalized = JSON.stringify(nextGraph, null, 2);
+    setJsonEditorText(normalized);
+    setJsonEditorValidation(validateJsonEditorContents(normalized));
+  }
+
+  function updateTraining(nextTraining: ModelGraph["training"]) {
+    setTraining(nextTraining);
+    pushHistory(nodesRef.current, edgesRef.current, nextTraining);
   }
 
   function fitToScreen() {
@@ -689,7 +801,7 @@ export function App() {
             onDelete={removeNode}
           />
         ) : (
-          <TrainingInspector training={training} warnings={trainingWarnings} onChange={setTraining} />
+          <TrainingInspector training={training} warnings={trainingWarnings} onChange={updateTraining} />
         )}
 
         <section className="issues-panel">
@@ -729,7 +841,12 @@ export function App() {
           exportedProject={exportedProject}
           exportPreview={exportPreview}
           copyStatus={copyStatus}
-          onOpenPreview={setExportPreview}
+          jsonEditorValue={jsonEditorText}
+          jsonEditorStatus={jsonEditorValidation.message}
+          jsonEditorCanApply={jsonEditorValidation.ok}
+          onJsonEditorChange={handleJsonEditorChange}
+          onApplyJsonEditor={applyJsonEditorChanges}
+          onOpenPreview={openExportPreview}
           onCopy={copyText}
           onDownloadText={downloadTextFile}
           onDownloadProject={downloadProjectArchive}
