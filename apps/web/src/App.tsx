@@ -25,6 +25,7 @@ import { createNode, defaultTrainingConfig } from "./app/defaults";
 import { normalizeGraphForGenericExport } from "./app/export-normalization";
 import { downloadBlobFile, downloadTextFile } from "./app/file-utils";
 import { resolveTemplate } from "./app/model-templates";
+import { getRouteFromHash, navigateToRoute, type AppRoute } from "./app/navigation";
 import { formatParameterCount } from "./app/parameter-estimator";
 import { graphPresets } from "./app/presets";
 import { readProjectFromInput } from "./app/project";
@@ -35,9 +36,11 @@ import { ConnectionsPanel } from "./components/ConnectionsPanel";
 import { ExportPanel } from "./components/ExportPanel";
 import { NodeInspector } from "./components/NodeInspector";
 import { PaletteSidebar } from "./components/PaletteSidebar";
+import { PrunePage } from "./components/PrunePage";
 import { TrainingInspector } from "./components/TrainingInspector";
 
 export function App() {
+  const [route, setRoute] = useState<AppRoute>(() => getRouteFromHash(window.location.hash));
   const initialNodes = useMemo(
     () => [createNode("Input", 0), createNode("Embedding", 1), createNode("TransformerBlock", 2), createNode("Output", 3)],
     []
@@ -62,6 +65,15 @@ export function App() {
   const dragStateRef = useRef<{ nodeId: string; pointerOffsetX: number; pointerOffsetY: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const loadInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    function handleHashChange() {
+      setRoute(getRouteFromHash(window.location.hash));
+    }
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   const graph: ModelGraph = useMemo(() => ({ nodes, edges, training }), [nodes, edges, training]);
   const parameterSummary = useMemo(() => formatParameterCount(graph), [graph]);
@@ -483,6 +495,10 @@ export function App() {
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
+  if (route === "prune") {
+    return <PrunePage onBackToBuilder={() => navigateToRoute("builder")} />;
+  }
+
   return (
     <div className="app-shell">
       <PaletteSidebar
@@ -500,6 +516,7 @@ export function App() {
         onSave={saveProject}
         onLoadClick={() => loadInputRef.current?.click()}
         onLoadFile={loadProjectFromFile}
+        onOpenPruningTool={() => navigateToRoute("prune")}
       />
 
       <main className="workspace">

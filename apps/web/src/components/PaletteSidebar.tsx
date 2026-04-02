@@ -19,6 +19,7 @@ type PaletteSidebarProps = {
   onSave: () => void;
   onLoadClick: () => void;
   onLoadFile: React.ChangeEventHandler<HTMLInputElement>;
+  onOpenPruningTool: () => void;
 };
 
 export function PaletteSidebar(props: PaletteSidebarProps) {
@@ -36,7 +37,8 @@ export function PaletteSidebar(props: PaletteSidebarProps) {
     onSearchQueryChange,
     onSave,
     onLoadClick,
-    onLoadFile
+    onLoadFile,
+    onOpenPruningTool
   } = props;
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -72,6 +74,9 @@ export function PaletteSidebar(props: PaletteSidebarProps) {
           </button>
           <button type="button" className="ghost-button" onClick={onLoadClick}>
             Load
+          </button>
+          <button type="button" className="ghost-button" onClick={onOpenPruningTool}>
+            Try Pruning Tool
           </button>
         </div>
       </div>
