@@ -7,7 +7,9 @@ import {
   exportEvalPy,
   exportLoggingUtilsPy,
   exportRequirementsTxt,
-  exportSchedulePy
+  exportSchedulePy,
+  exportScriptTrainPyForOptimizer,
+  exportTrainModulePyForLoss
 } from "./runtime-templates";
 import type { ProjectFileMap } from "./types";
 
@@ -110,6 +112,35 @@ def _load_yaml(path: str | Path) -> dict:
 
 def load_configs(model_path: str | Path, train_path: str | Path) -> AppConfig:
     return AppConfig(model=ModelConfig(**_load_yaml(model_path)), train=TrainConfig(**_load_yaml(train_path)))
+`;
+}
+
+function withGpt2BuildModel(modelPy: string): string {
+  return `${modelPy}
+
+
+def build_model(cfg, seq_len_override: int | None = None) -> GPT2LMHeadModel:
+    model_cfg = cfg.model
+    max_positions = seq_len_override or model_cfg.max_position_embeddings
+    return GPT2LMHeadModel(
+        config=GPT2Config(
+            vocab_size=model_cfg.vocab_size,
+            n_positions=max_positions,
+            n_embd=model_cfg.hidden_size,
+            n_layer=model_cfg.num_hidden_layers,
+            n_head=model_cfg.num_attention_heads,
+            n_inner=model_cfg.intermediate_size,
+            activation_function=model_cfg.activation_function,
+            embd_pdrop=model_cfg.embd_pdrop,
+            attn_pdrop=model_cfg.attn_pdrop,
+            resid_pdrop=model_cfg.resid_pdrop,
+            layer_norm_epsilon=model_cfg.layer_norm_epsilon,
+            scale_attn_weights=model_cfg.scale_attn_weights,
+            scale_attn_by_inverse_layer_idx=model_cfg.scale_attn_by_inverse_layer_idx,
+            reorder_and_upcast_attn=model_cfg.reorder_and_upcast_attn,
+            tie_word_embeddings=model_cfg.tie_word_embeddings,
+        )
+    )
 `;
 }
 
@@ -414,22 +445,23 @@ function exportGPT2HookNotes(training: TrainingConfig): string {
 }
 
 export function exportGPT2IrProjectFiles(spec: GPT2ArchitectureSpec, training: TrainingConfig): ProjectFileMap {
+  const optimizerName = training.optimizer === "Custom" ? (training.optimizerCustomName || "custom_optimizer") : training.optimizer.toLowerCase();
   const lossName = training.loss === "Custom" ? (training.lossCustomName || "custom_loss") : "cross_entropy";
   return {
     "README.md": exportGPT2Readme(spec, training),
     "requirements.txt": exportRequirementsTxt(),
     "configs/model.yaml": exportGPT2ModelYaml(spec),
     "configs/train.yaml": exportGPT2TrainYaml(training),
-    "scripts/train.py": exportGPT2ScriptTrainPy(training),
+    "scripts/train.py": exportScriptTrainPyForOptimizer(optimizerName),
     "src/kurra_ai_cb/__init__.py": "",
-    "src/kurra_ai_cb/model.py": exportGPT2IrToPyTorch(spec),
+    "src/kurra_ai_cb/model.py": withGpt2BuildModel(exportGPT2IrToPyTorch(spec)),
     "src/kurra_ai_cb/config.py": exportGPT2ConfigPy(),
     "src/kurra_ai_cb/checkpoint.py": exportCheckpointPy(),
     "src/kurra_ai_cb/data.py": exportDataPy(),
     "src/kurra_ai_cb/eval.py": exportEvalPy(),
     "src/kurra_ai_cb/logging_utils.py": exportLoggingUtilsPy(),
     "src/kurra_ai_cb/schedule.py": exportSchedulePy(),
-    "src/kurra_ai_cb/train.py": exportGPT2TrainModulePy(lossName),
+    "src/kurra_ai_cb/train.py": exportTrainModulePyForLoss(lossName),
     "CUSTOM_HOOKS.md": exportGPT2HookNotes(training)
   };
 }

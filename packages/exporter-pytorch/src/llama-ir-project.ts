@@ -7,7 +7,9 @@ import {
   exportEvalPy,
   exportLoggingUtilsPy,
   exportRequirementsTxt,
-  exportSchedulePy
+  exportSchedulePy,
+  exportScriptTrainPyForOptimizer,
+  exportTrainModulePyForLoss
 } from "./runtime-templates";
 import type { ProjectFileMap } from "./types";
 
@@ -110,6 +112,35 @@ def _load_yaml(path: str | Path) -> dict:
 
 def load_configs(model_path: str | Path, train_path: str | Path) -> AppConfig:
     return AppConfig(model=ModelConfig(**_load_yaml(model_path)), train=TrainConfig(**_load_yaml(train_path)))
+`;
+}
+
+function withLlamaBuildModel(modelPy: string): string {
+  return `${modelPy}
+
+
+def build_model(cfg, seq_len_override: int | None = None) -> LlamaForCausalLM:
+    model_cfg = cfg.model
+    max_positions = seq_len_override or model_cfg.max_position_embeddings
+    return LlamaForCausalLM(
+        config=LlamaConfig(
+            vocab_size=model_cfg.vocab_size,
+            hidden_size=model_cfg.hidden_size,
+            intermediate_size=model_cfg.intermediate_size,
+            num_hidden_layers=model_cfg.num_hidden_layers,
+            num_attention_heads=model_cfg.num_attention_heads,
+            num_key_value_heads=model_cfg.num_key_value_heads,
+            head_dim=model_cfg.head_dim,
+            hidden_act=model_cfg.hidden_act,
+            max_position_embeddings=max_positions,
+            rms_norm_eps=model_cfg.rms_norm_eps,
+            rope_theta=model_cfg.rope_theta,
+            attention_bias=model_cfg.attention_bias,
+            attention_dropout=model_cfg.attention_dropout,
+            mlp_bias=model_cfg.mlp_bias,
+            tie_word_embeddings=model_cfg.tie_word_embeddings,
+        )
+    )
 `;
 }
 
@@ -402,22 +433,23 @@ function exportLlamaHookNotes(training: TrainingConfig): string {
 }
 
 export function exportLlamaIrProjectFiles(spec: LlamaArchitectureSpec, training: TrainingConfig): ProjectFileMap {
+  const optimizerName = training.optimizer === "Custom" ? (training.optimizerCustomName || "custom_optimizer") : training.optimizer.toLowerCase();
   const lossName = training.loss === "Custom" ? (training.lossCustomName || "custom_loss") : "cross_entropy";
   return {
     "README.md": exportLlamaReadme(spec, training),
     "requirements.txt": exportRequirementsTxt(),
     "configs/model.yaml": exportLlamaModelYaml(spec),
     "configs/train.yaml": exportLlamaTrainYaml(training),
-    "scripts/train.py": exportLlamaScriptTrainPy(training),
+    "scripts/train.py": exportScriptTrainPyForOptimizer(optimizerName),
     "src/kurra_ai_cb/__init__.py": "",
-    "src/kurra_ai_cb/model.py": exportLlamaIrToPyTorch(spec),
+    "src/kurra_ai_cb/model.py": withLlamaBuildModel(exportLlamaIrToPyTorch(spec)),
     "src/kurra_ai_cb/config.py": exportLlamaConfigPy(),
     "src/kurra_ai_cb/checkpoint.py": exportCheckpointPy(),
     "src/kurra_ai_cb/data.py": exportDataPy(),
     "src/kurra_ai_cb/eval.py": exportEvalPy(),
     "src/kurra_ai_cb/logging_utils.py": exportLoggingUtilsPy(),
     "src/kurra_ai_cb/schedule.py": exportSchedulePy(),
-    "src/kurra_ai_cb/train.py": exportLlamaTrainModulePy(lossName),
+    "src/kurra_ai_cb/train.py": exportTrainModulePyForLoss(lossName),
     "CUSTOM_HOOKS.md": exportLlamaHookNotes(training)
   };
 }

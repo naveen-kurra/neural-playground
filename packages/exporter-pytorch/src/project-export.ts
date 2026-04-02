@@ -15,6 +15,24 @@ import {
 } from "./runtime-templates";
 import type { ProjectFileMap } from "./types";
 
+function withGenericBuildModel(modelPy: string): string {
+  return `${modelPy}
+
+
+def build_model(cfg, seq_len_override: int | None = None) -> DecoderLM:
+    seq_len = seq_len_override or cfg.model.seq_len
+    return DecoderLM(
+        vocab_size=cfg.model.vocab_size,
+        n_layers=cfg.model.n_layers,
+        d_model=cfg.model.d_model,
+        n_heads=cfg.model.n_heads,
+        ffn_hidden=cfg.model.ffn_hidden,
+        seq_len=seq_len,
+        activation_name=cfg.model.activation_name,
+    )
+`;
+}
+
 export function exportProjectFiles(graph: ModelGraph): ProjectFileMap {
   return {
     "README.md": exportReadme(graph),
@@ -23,7 +41,7 @@ export function exportProjectFiles(graph: ModelGraph): ProjectFileMap {
     "configs/train.yaml": exportTrainYaml(graph),
     "scripts/train.py": exportScriptTrainPy(graph),
     "src/kurra_ai_cb/__init__.py": "",
-    "src/kurra_ai_cb/model.py": exportModelGraphToPyTorch(graph),
+    "src/kurra_ai_cb/model.py": withGenericBuildModel(exportModelGraphToPyTorch(graph)),
     "src/kurra_ai_cb/config.py": exportConfigPy(),
     "src/kurra_ai_cb/checkpoint.py": exportCheckpointPy(),
     "src/kurra_ai_cb/data.py": exportDataPy(),

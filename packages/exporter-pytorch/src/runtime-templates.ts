@@ -1,9 +1,7 @@
 import { type ModelGraph } from "@neural-playground/block-schema";
 import { buildContext, exportActivationName, exportLossName, exportOptimizerName } from "./context";
 
-export function exportTrainModulePy(graph: ModelGraph): string {
-  const ctx = buildContext(graph);
-  const lossName = exportLossName(graph, ctx.lossName);
+export function exportTrainModulePyForLoss(lossName: string): string {
   return `from __future__ import annotations
 
 import math
@@ -118,9 +116,12 @@ def train_step(
 `;
 }
 
-export function exportScriptTrainPy(graph: ModelGraph): string {
+export function exportTrainModulePy(graph: ModelGraph): string {
   const ctx = buildContext(graph);
-  const optimizerName = exportOptimizerName(graph, ctx.optimizerName);
+  return exportTrainModulePyForLoss(exportLossName(graph, ctx.lossName));
+}
+
+export function exportScriptTrainPyForOptimizer(optimizerName: string): string {
   return `#!/usr/bin/env python3
 from __future__ import annotations
 
@@ -139,7 +140,7 @@ from kurra_ai_cb.config import load_configs
 from kurra_ai_cb.data import PackedShardIterator
 from kurra_ai_cb.eval import evaluate
 from kurra_ai_cb.logging_utils import JsonlLogger
-from kurra_ai_cb.model import DecoderLM
+from kurra_ai_cb.model import build_model
 from kurra_ai_cb.schedule import lr_scale
 from kurra_ai_cb.train import train_step
 
@@ -189,19 +190,6 @@ def _to_torch_batches(iterator: Iterable[np.ndarray], device: torch.device, max_
             break
 
 
-def build_model(cfg, seq_len_override: int | None = None) -> DecoderLM:
-    seq_len = seq_len_override or cfg.model.seq_len
-    return DecoderLM(
-        vocab_size=cfg.model.vocab_size,
-        n_layers=cfg.model.n_layers,
-        d_model=cfg.model.d_model,
-        n_heads=cfg.model.n_heads,
-        ffn_hidden=cfg.model.ffn_hidden,
-        seq_len=seq_len,
-        activation_name=cfg.model.activation_name,
-    )
-
-
 def build_optimizer(model: torch.nn.Module, cfg) -> torch.optim.Optimizer:
     name = cfg.train.optimizer.lower().strip()
     if name == "sgd":
@@ -225,26 +213,34 @@ def _save_checkpoint_bundle(
 
 def main() -> None:
     args = parse_args()
+    print("[train] loading configs...", flush=True)
     cfg = load_configs(args.model_config, args.train_config)
 
-    model_seq_len = args.seq_len or cfg.model.seq_len
+    print("[train] resolving device...", flush=True)
     max_steps = args.max_steps or cfg.train.max_steps
     device = _resolve_device()
-    model = build_model(cfg, seq_len_override=model_seq_len).to(device)
+    print(f"[train] device={device}", flush=True)
+    print("[train] building model...", flush=True)
+    model = build_model(cfg, seq_len_override=args.seq_len).to(device)
+    print(f"[train] model parameters={sum(p.numel() for p in model.parameters()):,}", flush=True)
+    print("[train] building optimizer...", flush=True)
     optimizer = build_optimizer(model, cfg)
 
     scaler = None
     if args.use_amp and device.type == "cuda":
         scaler = torch.amp.GradScaler("cuda")
 
+    print("[train] discovering shards...", flush=True)
     train_shards = _glob_shards(args.train_shards_glob)
     val_shards = _glob_shards(args.val_shards_glob)
+    print(f"[train] train_shards={len(train_shards)} val_shards={len(val_shards)}", flush=True)
     if not train_shards:
         print("Train entrypoint ready. Provide --train-shards-glob and optional --val-shards-glob.")
         return
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[train] output_dir={output_dir}", flush=True)
     latest_ckpt = output_dir / "latest.pt"
     best_ckpt = output_dir / "best.pt"
     logger = JsonlLogger(output_dir / "train_log.jsonl")
@@ -257,6 +253,7 @@ def main() -> None:
 
     if args.resume:
         ckpt_path = latest_ckpt if args.resume == "latest" else Path(args.resume)
+        print(f"[train] resuming from {ckpt_path}", flush=True)
         state = load_checkpoint(ckpt_path, model, optimizer, scaler=scaler, map_location=device)
         runtime = state.get("extra", {}).get("runtime", {})
         step = int(runtime.get("step", state.get("step", 0)))
@@ -270,6 +267,7 @@ def main() -> None:
 
     while step < max_steps:
         epoch += 1
+        print(f"[train] starting epoch={epoch} step={step}", flush=True)
         train_it = PackedShardIterator(train_shards, batch_size=args.batch_size, shuffle=True, seed=cfg.train.seed + epoch)
 
         for np_batch in train_it:
@@ -300,6 +298,10 @@ def main() -> None:
             step += 1
             tokens_per_sec = float(batch.numel()) / dt
             if step % cfg.train.log_every_steps == 0 or step == 1:
+                print(
+                    f"[train] step={step} loss={out['loss']:.4f} lr={lr:.6g} grad_norm={out['grad_norm']:.4f} tokens_seen={tokens_seen}",
+                    flush=True,
+                )
                 logger.log(
                     {
                         "event": "train",
@@ -314,10 +316,12 @@ def main() -> None:
                 )
 
             if val_shards and (step % cfg.train.eval_every_steps == 0):
+                print(f"[train] evaluating at step={step}...", flush=True)
                 val_it = PackedShardIterator(val_shards, batch_size=args.batch_size, shuffle=False, seed=cfg.train.seed)
                 val_batches = list(_to_torch_batches(val_it, device=device, max_batches=args.eval_max_batches))
                 metrics = evaluate(model, val_batches)
                 val_loss = float(metrics["loss"])
+                print(f"[train] val_loss={val_loss:.4f}", flush=True)
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     no_improve_evals = 0
@@ -328,6 +332,7 @@ def main() -> None:
                         "best_val_loss": best_val_loss,
                         "no_improve_evals": no_improve_evals,
                     }
+                    print(f"[train] saving best checkpoint -> {best_ckpt}", flush=True)
                     _save_checkpoint_bundle(best_ckpt, model, optimizer, step=step, runtime=runtime, scaler=scaler)
                 else:
                     no_improve_evals += 1
@@ -342,6 +347,7 @@ def main() -> None:
                     "best_val_loss": best_val_loss,
                     "no_improve_evals": no_improve_evals,
                 }
+                print(f"[train] saving checkpoint -> {latest_ckpt}", flush=True)
                 _save_checkpoint_bundle(latest_ckpt, model, optimizer, step=step, runtime=runtime, scaler=scaler)
 
             if early_stop or step >= max_steps:
@@ -350,10 +356,17 @@ def main() -> None:
         if early_stop:
             break
 
+    print(f"[train] finished at step={step}", flush=True)
+
 
 if __name__ == "__main__":
     main()
 `;
+}
+
+export function exportScriptTrainPy(graph: ModelGraph): string {
+  const ctx = buildContext(graph);
+  return exportScriptTrainPyForOptimizer(exportOptimizerName(graph, ctx.optimizerName));
 }
 
 export function exportRequirementsTxt(): string {

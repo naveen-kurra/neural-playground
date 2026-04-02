@@ -6,7 +6,9 @@ import {
   exportEvalPy,
   exportLoggingUtilsPy,
   exportRequirementsTxt,
-  exportSchedulePy
+  exportSchedulePy,
+  exportScriptTrainPyForOptimizer,
+  exportTrainModulePyForLoss
 } from "./runtime-templates";
 import { exportHybridIrToPyTorch } from "./hybrid-ir-export";
 import type { ProjectFileMap } from "./types";
@@ -112,6 +114,28 @@ def _load_yaml(path: str | Path) -> dict:
 
 def load_configs(model_path: str | Path, train_path: str | Path) -> AppConfig:
     return AppConfig(model=_load_yaml(model_path), train=TrainConfig(**_load_yaml(train_path)))
+`;
+}
+
+function withHybridBuildModel(modelPy: string): string {
+  return `${modelPy}
+
+
+def build_model(cfg, seq_len_override: int | None = None) -> HybridForCausalLM:
+    model_cfg = dict(cfg.model)
+    if seq_len_override is not None:
+        model_cfg["max_position_embeddings"] = seq_len_override
+    allowed_keys = {
+        "vocab_size",
+        "hidden_size",
+        "max_position_embeddings",
+        "tie_word_embeddings",
+        "embd_pdrop",
+        "final_norm_epsilon",
+        "max_llama_head_dim",
+        "max_rope_theta",
+    }
+    return HybridForCausalLM(HybridConfig(**{k: v for k, v in model_cfg.items() if k in allowed_keys}))
 `;
 }
 
@@ -339,22 +363,23 @@ if __name__ == "__main__":
 }
 
 export function exportHybridIrProjectFiles(spec: HybridDecoderArchitectureSpec, training: TrainingConfig): ProjectFileMap {
+  const optimizerName = training.optimizer === "Custom" ? (training.optimizerCustomName || "custom_optimizer") : training.optimizer.toLowerCase();
   const lossName = training.loss === "Custom" ? (training.lossCustomName || "custom_loss") : "cross_entropy";
   return {
     "README.md": `# Exported Hybrid Decoder Project\n\nThis project was generated from Neural Playground using the true mixed-block exporter.\n`,
     "requirements.txt": exportRequirementsTxt(),
     "configs/model.yaml": exportHybridModelYaml(spec),
     "configs/train.yaml": exportHybridTrainYaml(training),
-    "scripts/train.py": exportHybridScriptTrainPy(training),
+    "scripts/train.py": exportScriptTrainPyForOptimizer(optimizerName),
     "src/kurra_ai_cb/__init__.py": "",
-    "src/kurra_ai_cb/model.py": exportHybridIrToPyTorch(spec),
+    "src/kurra_ai_cb/model.py": withHybridBuildModel(exportHybridIrToPyTorch(spec)),
     "src/kurra_ai_cb/config.py": exportHybridConfigPy(),
     "src/kurra_ai_cb/checkpoint.py": exportCheckpointPy(),
     "src/kurra_ai_cb/data.py": exportDataPy(),
     "src/kurra_ai_cb/eval.py": exportEvalPy(),
     "src/kurra_ai_cb/logging_utils.py": exportLoggingUtilsPy(),
     "src/kurra_ai_cb/schedule.py": exportSchedulePy(),
-    "src/kurra_ai_cb/train.py": exportHybridTrainModulePy(lossName),
+    "src/kurra_ai_cb/train.py": exportTrainModulePyForLoss(lossName),
     "CUSTOM_HOOKS.md": "# Generated custom hook notes\n"
   };
 }

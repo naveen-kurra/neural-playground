@@ -146,7 +146,7 @@ function renderBlockForward(spec: HybridDecoderArchitectureSpec): string {
   if (!spec.operators.blocks.some((block) => block.family === "gpt2")) {
     return `        position_embeddings = self.rotary_emb(hidden_states, position_ids)
         for block in self.blocks:
-            hidden_states = block(hidden_states, position_ids=position_ids, position_embeddings=position_embeddings)`;
+            hidden_states = block(hidden_states, position_embeddings=position_embeddings)`;
   }
 
   return `        for block in self.blocks:
@@ -154,7 +154,7 @@ function renderBlockForward(spec: HybridDecoderArchitectureSpec): string {
                 hidden_states = block(hidden_states)
             else:
                 position_embeddings = self.rotary_emb(hidden_states, position_ids)
-                hidden_states = block(hidden_states, position_ids=position_ids, position_embeddings=position_embeddings)`;
+                hidden_states = block(hidden_states, position_embeddings=position_embeddings)`;
 }
 
 export function renderHybridModel(spec: HybridDecoderArchitectureSpec, primitiveSections: string): string {
