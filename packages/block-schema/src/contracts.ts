@@ -33,5 +33,9 @@ export type BlockDefinition = {
   outputContracts: ShapeContract[];
   ruleSpecs: BlockRuleSpec[];
   fields: BlockField[];
+  /** Config field that holds the explicit sequence/hidden dimension for this block (e.g. "dModel", "embeddingDim"). If absent, dimension is inferred from incoming edges. */
+  sequenceDimField?: string;
+  /** Config field that holds the vocabulary size for this block. Used for cross-node vocab mismatch detection. */
+  vocabSizeField?: string;
 };
 

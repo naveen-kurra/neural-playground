@@ -131,18 +131,7 @@ export function App() {
   const canRedo = historyPos < historyRef.current.length - 1;
   const graph: ModelGraph = useMemo(() => ({ nodes, edges, training }), [nodes, edges, training]);
   const parameterSummary = useMemo(() => formatParameterCount(graph), [graph]);
-  const issues = useMemo(() => {
-    const base = validateGraph(graph, "playground-valid");
-    const exportLevel = validateGraph(graph, "pytorch-export-valid");
-    const decoderLevel = validateGraph(graph, "decoder-training-valid");
-    const seen = new Set<string>();
-    const merged = [];
-    for (const issue of [...base, ...exportLevel, ...decoderLevel]) {
-      const key = `${issue.code}-${issue.message}-${issue.nodeId ?? ""}-${issue.edgeId ?? ""}`;
-      if (!seen.has(key)) { seen.add(key); merged.push(issue); }
-    }
-    return merged;
-  }, [graph]);
+  const issues = useMemo(() => validateGraph(graph), [graph]);
   const normalizedExportGraph = useMemo(() => normalizeGraphForGenericExport(graph), [graph]);
   const pytorchExportIssues = useMemo(
     () => validateGraph(normalizedExportGraph.ok ? normalizedExportGraph.value : graph, "pytorch-export-valid"),
@@ -153,9 +142,6 @@ export function App() {
     [graph, normalizedExportGraph]
   );
   const selectedNode = selected?.kind === "node" ? nodes.find((node) => node.id === selected.nodeId) ?? null : null;
-  const formattedIssues = useMemo(() => issues.map((i) => ({ raw: i, fmt: formatValidationIssue(i) })), [issues]);
-  const errorCount = formattedIssues.filter((i) => i.fmt.severity === "error").length;
-  const warningCount = formattedIssues.filter((i) => i.fmt.severity === "warning").length;
 
   const trainingWarnings = useMemo(() => {
     const warnings: string[] = [];
@@ -194,6 +180,25 @@ export function App() {
       return { ok: false as const, error: error instanceof Error ? error.message : "Unknown hybrid mapping error" };
     }
   }, [graph]);
+
+  // Merge export-level validation only when no specialized IR can handle the graph.
+  // Specialized IRs (GPT-2, LLaMA, Hybrid) have their own embedding/topology rules
+  // so generic "pytorch-export-valid" checks would produce false positives on them.
+  const displayIssues = useMemo(() => {
+    if (gpt2Ir.ok || llamaIr.ok || hybridIr.ok) return issues;
+    const exportLevel = validateGraph(graph, "pytorch-export-valid");
+    const seen = new Set<string>();
+    const merged = [];
+    for (const issue of [...issues, ...exportLevel]) {
+      const key = `${issue.code}-${issue.message}-${issue.nodeId ?? ""}-${issue.edgeId ?? ""}`;
+      if (!seen.has(key)) { seen.add(key); merged.push(issue); }
+    }
+    return merged;
+  }, [graph, issues, gpt2Ir.ok, llamaIr.ok, hybridIr.ok]);
+
+  const formattedIssues = useMemo(() => displayIssues.map((i) => ({ raw: i, fmt: formatValidationIssue(i) })), [displayIssues]);
+  const errorCount = formattedIssues.filter((i) => i.fmt.severity === "error").length;
+  const warningCount = formattedIssues.filter((i) => i.fmt.severity === "warning").length;
 
   function summarizeValidationIssues(validationIssues: ValidationIssue[]): string {
     if (validationIssues.length === 0) {

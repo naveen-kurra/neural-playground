@@ -51,6 +51,8 @@ export const blockDefinitions: BlockDefinition[] = [
         dims: ["seq_len", "d_model"]
       }
     ],
+    sequenceDimField: "embeddingDim",
+    vocabSizeField: "vocabSize",
     ruleSpecs: [
       {
         code: "invalid_vocab_size",
@@ -97,6 +99,8 @@ export const blockDefinitions: BlockDefinition[] = [
         dims: ["seq_len", "d_model"]
       }
     ],
+    sequenceDimField: "embeddingDim",
+    vocabSizeField: "vocabSize",
     ruleSpecs: [
       {
         code: "invalid_vocab_size",
@@ -143,6 +147,8 @@ export const blockDefinitions: BlockDefinition[] = [
         dims: ["seq_len", "d_model"]
       }
     ],
+    sequenceDimField: "embeddingDim",
+    vocabSizeField: "vocabSize",
     ruleSpecs: [
       {
         code: "invalid_vocab_size",
@@ -189,6 +195,7 @@ export const blockDefinitions: BlockDefinition[] = [
         dims: ["seq_len", "d_model"]
       }
     ],
+    sequenceDimField: "embeddingDim",
     ruleSpecs: [
       {
         code: "invalid_sequence_length",
@@ -286,6 +293,7 @@ export const blockDefinitions: BlockDefinition[] = [
         dims: ["seq_len", "d_model"]
       }
     ],
+    sequenceDimField: "dModel",
     ruleSpecs: [
       {
         code: "invalid_d_model",
@@ -418,6 +426,7 @@ export const blockDefinitions: BlockDefinition[] = [
         dims: ["seq_len", "d_model"]
       }
     ],
+    sequenceDimField: "dModel",
     ruleSpecs: [
       {
         code: "invalid_d_model",
@@ -542,6 +551,7 @@ export const blockDefinitions: BlockDefinition[] = [
         dims: ["seq_len", "d_model"]
       }
     ],
+    sequenceDimField: "dModel",
     ruleSpecs: [
       {
         code: "invalid_d_model",
@@ -562,6 +572,16 @@ export const blockDefinitions: BlockDefinition[] = [
         code: "invalid_ffn_hidden",
         severity: "error",
         description: "MLP hidden dimension must be positive."
+      },
+      {
+        code: "invalid_kv_heads",
+        severity: "error",
+        description: "KV heads must be positive, not exceed attention heads, and divide evenly into attention heads."
+      },
+      {
+        code: "head_dim_mismatch",
+        severity: "error",
+        description: "Head dim must equal hidden size divided by attention heads."
       }
     ],
     fields: [
@@ -859,6 +879,7 @@ export const blockDefinitions: BlockDefinition[] = [
         dims: ["seq_len", "vocab_size"]
       }
     ],
+    vocabSizeField: "vocabSize",
     ruleSpecs: [
       {
         code: "unknown_output_dim",
@@ -900,6 +921,7 @@ export const blockDefinitions: BlockDefinition[] = [
         dims: ["seq_len", "vocab_size"]
       }
     ],
+    vocabSizeField: "vocabSize",
     ruleSpecs: [
       {
         code: "unknown_output_dim",

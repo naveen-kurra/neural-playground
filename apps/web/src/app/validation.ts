@@ -29,7 +29,14 @@ const ISSUE_META: Record<string, { title: string; severity: "error" | "warning" 
   unknown_mlp_input_dim: { title: "Unknown MLP Input Size", severity: "warning" },
   invalid_sequence_length: { title: "Invalid Sequence Length", severity: "error" },
   unknown_layernorm_dim: { title: "Unknown LayerNorm Dimension", severity: "warning" },
-  unknown_output_dim: { title: "Unknown Output Dimension", severity: "warning" }
+  unknown_output_dim: { title: "Unknown Output Dimension", severity: "warning" },
+  config_dim_mismatch: { title: "Dimension Mismatch", severity: "error" },
+  config_vocab_mismatch: { title: "Vocab Size Mismatch", severity: "error" },
+  invalid_kv_heads: { title: "Invalid KV Heads", severity: "error" },
+  head_dim_mismatch: { title: "Head Dim Mismatch", severity: "error" },
+  invalid_expert_count: { title: "Invalid Expert Count", severity: "error" },
+  invalid_top_k: { title: "Invalid Top-K", severity: "error" },
+  invalid_expert_hidden: { title: "Invalid Expert Hidden Size", severity: "error" }
 };
 
 function humanizeCode(code: string): string {

@@ -1,4 +1,4 @@
-import type { ModelGraph } from "@neural-playground/block-schema";
+import { getBlockDefinition, type ModelGraph } from "@neural-playground/block-schema";
 
 export function numberConfig(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -46,68 +46,40 @@ export function getInputSequenceDim(
   node: ModelGraph["nodes"][number],
   inferredSequenceDims: Map<string, number | null>
 ): number | null {
-  switch (node.type) {
-    case "TransformerBlock":
-    case "GPT2Block":
-    case "LlamaBlock":
-      return numberConfig(node.config.dModel);
-    case "LayerNorm":
-    case "LlamaFinalRMSNorm":
-    case "GPT2FinalLayerNorm":
-    case "MoE":
-    case "MLP":
-    case "Add":
-    case "Dropout":
-    case "LlamaLMHead":
-    case "GPT2LMHead":
-    case "Output":
-      return inferNodeSequenceDim(node, inferredSequenceDims);
-    default:
-      return null;
+  const def = getBlockDefinition(node.type);
+  // If block declares its own explicit dim field, use it directly
+  if (def.sequenceDimField) {
+    return numberConfig((node.config as Record<string, unknown>)[def.sequenceDimField]);
   }
+  // If block accepts sequence input, its expected input dim is inferred from incoming edges
+  const hasSequenceInput = def.inputContracts.some((c) => c.kind === "sequence");
+  if (hasSequenceInput) {
+    return inferNodeSequenceDim(node, inferredSequenceDims);
+  }
+  return null;
 }
 
 export function getOutputSequenceDim(
   node: ModelGraph["nodes"][number],
   inferredSequenceDims: Map<string, number | null>
 ): number | null {
-  switch (node.type) {
-    case "Embedding":
-    case "LlamaTokenEmbedding":
-    case "GPT2TokenEmbedding":
-    case "GPT2PositionEmbedding":
-      return numberConfig(node.config.embeddingDim);
-    case "TransformerBlock":
-    case "GPT2Block":
-    case "LlamaBlock":
-      return numberConfig(node.config.dModel);
-    case "LayerNorm":
-    case "LlamaFinalRMSNorm":
-    case "GPT2FinalLayerNorm":
-    case "MoE":
-    case "MLP":
-    case "Add":
-    case "Dropout":
-      return inferNodeSequenceDim(node, inferredSequenceDims);
-    default:
-      return null;
+  const def = getBlockDefinition(node.type);
+  // If block declares its own explicit dim field, its output is that dim
+  if (def.sequenceDimField) {
+    return numberConfig((node.config as Record<string, unknown>)[def.sequenceDimField]);
   }
+  // If block produces sequence output, its output dim is inferred from incoming edges
+  const hasSequenceOutput = def.outputContracts.some((c) => c.kind === "sequence");
+  if (hasSequenceOutput) {
+    return inferNodeSequenceDim(node, inferredSequenceDims);
+  }
+  return null;
 }
 
 function getExplicitSequenceDim(node: ModelGraph["nodes"][number]): number | null {
-  switch (node.type) {
-    case "Embedding":
-    case "LlamaTokenEmbedding":
-    case "GPT2TokenEmbedding":
-    case "GPT2PositionEmbedding":
-      return numberConfig(node.config.embeddingDim);
-    case "TransformerBlock":
-    case "GPT2Block":
-    case "LlamaBlock":
-      return numberConfig(node.config.dModel);
-    default:
-      return null;
-  }
+  const def = getBlockDefinition(node.type);
+  if (!def.sequenceDimField) return null;
+  return numberConfig((node.config as Record<string, unknown>)[def.sequenceDimField]);
 }
 
 function inferFromIncoming(

@@ -215,6 +215,32 @@ const nodeRuleHandlers: Record<string, NodeRuleHandler> = {
       }
     ];
   },
+  invalid_kv_heads(node) {
+    const numHeads = numberConfig(node.config.numHeads);
+    const kvHeads = numberConfig(node.config.numKeyValueHeads);
+    if (numHeads === null || kvHeads === null) return [];
+    if (kvHeads <= 0) {
+      return [{ code: "invalid_kv_heads", message: `KV heads must be positive. Found ${kvHeads}.`, nodeId: node.id }];
+    }
+    if (kvHeads > numHeads) {
+      return [{ code: "invalid_kv_heads", message: `KV heads (${kvHeads}) cannot exceed attention heads (${numHeads}).`, nodeId: node.id }];
+    }
+    if (numHeads % kvHeads !== 0) {
+      return [{ code: "invalid_kv_heads", message: `Attention heads (${numHeads}) must be divisible by KV heads (${kvHeads}).`, nodeId: node.id }];
+    }
+    return [];
+  },
+  head_dim_mismatch(node) {
+    const dModel = numberConfig(node.config.dModel);
+    const numHeads = numberConfig(node.config.numHeads);
+    const headDim = numberConfig(node.config.headDim);
+    if (dModel === null || numHeads === null || numHeads <= 0 || headDim === null) return [];
+    const expected = Math.floor(dModel / numHeads);
+    if (headDim !== expected) {
+      return [{ code: "head_dim_mismatch", message: `Head dim should be ${expected} (${dModel} / ${numHeads}), but is set to ${headDim}.`, nodeId: node.id }];
+    }
+    return [];
+  },
   unknown_output_dim(node, inferredSequenceDims) {
     const incomingDim = inferNodeSequenceDim(node, inferredSequenceDims);
     const headType = String(node.config.headType ?? "LanguageModel");
