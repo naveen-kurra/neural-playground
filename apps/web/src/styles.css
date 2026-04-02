@@ -297,7 +297,9 @@ button {
 
 .json-editor-wrap {
   display: grid;
-  gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+  gap: 8px;
   white-space: normal;
 }
 
@@ -313,7 +315,8 @@ button {
 
 .json-editor {
   width: 100%;
-  min-height: 340px;
+  min-height: 0;
+  height: 100%;
   padding: 12px;
   border: 1px solid rgba(135, 155, 191, 0.22);
   border-radius: 12px;
@@ -322,7 +325,7 @@ button {
   font-size: 0.82rem;
   line-height: 1.55;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  resize: vertical;
+  resize: none;
 }
 
 .copy-status {
