@@ -22,14 +22,24 @@ const ISSUE_META: Record<string, { title: string; severity: "error" | "warning" 
   invalid_d_model: { title: "Invalid Model Dimension", severity: "error" },
   invalid_num_heads: { title: "Invalid Head Count", severity: "error" },
   heads_dimension_mismatch: { title: "Head Split Mismatch", severity: "error" },
+  invalid_dropout_range: { title: "Invalid Dropout", severity: "error" },
   invalid_ffn_hidden: { title: "Invalid FFN Hidden Size", severity: "error" },
   invalid_vocab_size: { title: "Invalid Vocab Size", severity: "error" },
   invalid_embedding_dim: { title: "Invalid Embedding Dimension", severity: "error" },
   invalid_hidden_dim: { title: "Invalid Hidden Dimension", severity: "error" },
+  invalid_layer_norm_epsilon: { title: "Invalid Norm Epsilon", severity: "error" },
   unknown_mlp_input_dim: { title: "Unknown MLP Input Size", severity: "warning" },
   invalid_sequence_length: { title: "Invalid Sequence Length", severity: "error" },
   unknown_layernorm_dim: { title: "Unknown LayerNorm Dimension", severity: "warning" },
-  unknown_output_dim: { title: "Unknown Output Dimension", severity: "warning" }
+  unknown_output_dim: { title: "Unknown Output Dimension", severity: "warning" },
+  config_dim_mismatch: { title: "Dimension Mismatch", severity: "error" },
+  config_vocab_mismatch: { title: "Vocab Size Mismatch", severity: "error" },
+  invalid_kv_heads: { title: "Invalid KV Heads", severity: "error" },
+  head_dim_mismatch: { title: "Head Dim Mismatch", severity: "error" },
+  invalid_expert_count: { title: "Invalid Expert Count", severity: "error" },
+  invalid_top_k: { title: "Invalid Top-K", severity: "error" },
+  invalid_expert_hidden: { title: "Invalid Expert Hidden Size", severity: "error" },
+  unknown_validation_rule: { title: "Unsupported Validation Rule", severity: "warning" }
 };
 
 function humanizeCode(code: string): string {

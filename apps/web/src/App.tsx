@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { getBlockDefinition, type BlockEdge, type BlockField, type BlockNode, type ModelGraph } from "@neural-playground/block-schema";
 import {
   exportGPT2IrProjectFiles,
@@ -28,16 +28,27 @@ import { resolveTemplate } from "./app/model-templates";
 import { getRouteFromHash, navigateToRoute, type AppRoute } from "./app/navigation";
 import { formatParameterCount } from "./app/parameter-estimator";
 import { graphPresets } from "./app/presets";
-import { readProjectFromInput } from "./app/project";
+import { readProjectFromInput, validateProjectDocument } from "./app/project";
 import type { CopyStatus, ExportPreview, ProjectDocument, SafeExport, SelectedState } from "./app/types";
 import { formatValidationIssue } from "./app/validation";
 import { CanvasPanel } from "./components/CanvasPanel";
-import { ConnectionsPanel } from "./components/ConnectionsPanel";
 import { ExportPanel } from "./components/ExportPanel";
 import { NodeInspector } from "./components/NodeInspector";
 import { PaletteSidebar } from "./components/PaletteSidebar";
 import { PrunePage } from "./components/PrunePage";
 import { TrainingInspector } from "./components/TrainingInspector";
+
+type HistorySnapshot = {
+  nodes: BlockNode[];
+  edges: BlockEdge[];
+  training: ModelGraph["training"];
+};
+
+type JsonEditorValidation = {
+  ok: boolean;
+  message: string;
+  graph: ModelGraph | null;
+};
 
 export function App() {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromHash(window.location.hash));
@@ -45,16 +56,28 @@ export function App() {
     () => [createNode("Input", 0), createNode("Embedding", 1), createNode("TransformerBlock", 2), createNode("Output", 3)],
     []
   );
+  const initialEdges = useMemo<BlockEdge[]>(
+    () => [
+      { id: "edge-1", source: initialNodes[0]!.id, target: initialNodes[1]!.id },
+      { id: "edge-2", source: initialNodes[1]!.id, target: initialNodes[2]!.id },
+      { id: "edge-3", source: initialNodes[2]!.id, target: initialNodes[3]!.id }
+    ],
+    [initialNodes]
+  );
+  const initialTraining = useMemo(() => defaultTrainingConfig(), []);
   const [nodes, setNodes] = useState<BlockNode[]>(initialNodes);
-  const [edges, setEdges] = useState<BlockEdge[]>([
-    { id: "edge-1", source: initialNodes[0]!.id, target: initialNodes[1]!.id },
-    { id: "edge-2", source: initialNodes[1]!.id, target: initialNodes[2]!.id },
-    { id: "edge-3", source: initialNodes[2]!.id, target: initialNodes[3]!.id }
-  ]);
-  const [training, setTraining] = useState(defaultTrainingConfig);
+  const [edges, setEdges] = useState<BlockEdge[]>(initialEdges);
+  const [training, setTraining] = useState(initialTraining);
   const [selected, setSelected] = useState<SelectedState>({ kind: "training" });
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [pendingConnectionSourceId, setPendingConnectionSourceId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { panRef.current = pan; }, [pan]);
   const [connectionError, setConnectionError] = useState("");
   const [exportPreview, setExportPreview] = useState<ExportPreview>(null);
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
@@ -62,7 +85,14 @@ export function App() {
   const [modelTemplateSelection, setModelTemplateSelection] = useState("GPT-2");
   const [templateBlockCount, setTemplateBlockCount] = useState(12);
   const [searchQuery, setSearchQuery] = useState("");
+  const [jsonEditorText, setJsonEditorText] = useState("");
+  const [jsonEditorValidation, setJsonEditorValidation] = useState<JsonEditorValidation>({
+    ok: false,
+    message: "Open Graph JSON to edit and apply changes.",
+    graph: null
+  });
   const dragStateRef = useRef<{ nodeId: string; pointerOffsetX: number; pointerOffsetY: number } | null>(null);
+  const dragMovedRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const loadInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -75,6 +105,53 @@ export function App() {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
+  // History for undo/redo — all refs so event-listener closures are always fresh
+  const historyRef = useRef<HistorySnapshot[]>([
+    { nodes: initialNodes, edges: initialEdges, training: initialTraining }
+  ]);
+  const historyPosRef = useRef(0);
+  const [historyPos, setHistoryPos] = useState(0); // drives canUndo/canRedo re-renders
+  const nodesRef = useRef(initialNodes);
+  const edgesRef = useRef(initialEdges);
+  const trainingRef = useRef(initialTraining);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
+  useEffect(() => { trainingRef.current = training; }, [training]);
+
+  const pushHistory = useCallback((nextNodes: BlockNode[], nextEdges: BlockEdge[], nextTraining: ModelGraph["training"] = trainingRef.current) => {
+    const trimmed = historyRef.current.slice(0, historyPosRef.current + 1);
+    trimmed.push({ nodes: nextNodes, edges: nextEdges, training: nextTraining });
+    if (trimmed.length > 100) trimmed.shift();
+    historyRef.current = trimmed;
+    historyPosRef.current = trimmed.length - 1;
+    setHistoryPos(trimmed.length - 1);
+  }, []);
+
+  const undo = useCallback(() => {
+    if (historyPosRef.current <= 0) return;
+    const newPos = historyPosRef.current - 1;
+    const snap = historyRef.current[newPos]!;
+    setNodes(snap.nodes);
+    setEdges(snap.edges);
+    setTraining(snap.training);
+    historyPosRef.current = newPos;
+    setHistoryPos(newPos);
+    setSelected({ kind: "training" });
+  }, []);
+
+  const redo = useCallback(() => {
+    if (historyPosRef.current >= historyRef.current.length - 1) return;
+    const newPos = historyPosRef.current + 1;
+    const snap = historyRef.current[newPos]!;
+    setNodes(snap.nodes);
+    setEdges(snap.edges);
+    setTraining(snap.training);
+    historyPosRef.current = newPos;
+    setHistoryPos(newPos);
+  }, []);
+
+  const canUndo = historyPos > 0;
+  const canRedo = historyPos < historyRef.current.length - 1;
   const graph: ModelGraph = useMemo(() => ({ nodes, edges, training }), [nodes, edges, training]);
   const parameterSummary = useMemo(() => formatParameterCount(graph), [graph]);
   const issues = useMemo(() => validateGraph(graph), [graph]);
@@ -127,6 +204,25 @@ export function App() {
     }
   }, [graph]);
 
+  // Merge export-level validation only when no specialized IR can handle the graph.
+  // Specialized IRs (GPT-2, LLaMA, Hybrid) have their own embedding/topology rules
+  // so generic "pytorch-export-valid" checks would produce false positives on them.
+  const displayIssues = useMemo(() => {
+    if (gpt2Ir.ok || llamaIr.ok || hybridIr.ok) return issues;
+    const exportLevel = validateGraph(graph, "pytorch-export-valid");
+    const seen = new Set<string>();
+    const merged = [];
+    for (const issue of [...issues, ...exportLevel]) {
+      const key = `${issue.code}-${issue.message}-${issue.nodeId ?? ""}-${issue.edgeId ?? ""}`;
+      if (!seen.has(key)) { seen.add(key); merged.push(issue); }
+    }
+    return merged;
+  }, [graph, issues, gpt2Ir.ok, llamaIr.ok, hybridIr.ok]);
+
+  const formattedIssues = useMemo(() => displayIssues.map((i) => ({ raw: i, fmt: formatValidationIssue(i) })), [displayIssues]);
+  const errorCount = formattedIssues.filter((i) => i.fmt.severity === "error").length;
+  const warningCount = formattedIssues.filter((i) => i.fmt.severity === "warning").length;
+
   function summarizeValidationIssues(validationIssues: ValidationIssue[]): string {
     if (validationIssues.length === 0) {
       return "";
@@ -137,6 +233,51 @@ export function App() {
     }
 
     return `${validationIssues[0]!.message} (${validationIssues.length - 1} more issue${validationIssues.length > 2 ? "s" : ""})`;
+  }
+
+  function validateJsonEditorContents(contents: string): JsonEditorValidation {
+    const trimmed = contents.trim();
+    if (!trimmed) {
+      return { ok: false, message: "JSON editor is empty.", graph: null };
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? `JSON parse error: ${error.message}` : "JSON parse error.",
+        graph: null
+      };
+    }
+
+    try {
+      const document = validateProjectDocument(parsed);
+      const validationIssues = validateGraph(document.graph);
+      const validationErrors = validationIssues.filter((issue) => formatValidationIssue(issue).severity === "error");
+      if (validationErrors.length > 0) {
+        return {
+          ok: false,
+          message: `Graph validation failed: ${summarizeValidationIssues(validationErrors)}`,
+          graph: null
+        };
+      }
+
+      return {
+        ok: true,
+        message: validationIssues.length > 0
+          ? `JSON is valid and can be applied (${validationIssues.length} warning${validationIssues.length === 1 ? "" : "s"}).`
+          : "JSON is valid and can be applied.",
+        graph: document.graph
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Invalid project JSON.",
+        graph: null
+      };
+    }
   }
 
   const exportedPyTorch = useMemo<SafeExport<string>>(() => {
@@ -209,9 +350,12 @@ export function App() {
       }
 
       const bounds = canvas.getBoundingClientRect();
-      const nextX = event.clientX - bounds.left + canvas.scrollLeft - dragState.pointerOffsetX;
-      const nextY = event.clientY - bounds.top + canvas.scrollTop - dragState.pointerOffsetY;
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
+      const nextX = (event.clientX - bounds.left - currentPan.x) / currentZoom - dragState.pointerOffsetX;
+      const nextY = (event.clientY - bounds.top - currentPan.y) / currentZoom - dragState.pointerOffsetY;
 
+      dragMovedRef.current = true;
       setNodes((current) =>
         current.map((node) =>
           node.id === dragState.nodeId
@@ -228,6 +372,10 @@ export function App() {
     }
 
     function handlePointerUp() {
+      if (dragStateRef.current && dragMovedRef.current) {
+        pushHistory(nodesRef.current, edgesRef.current);
+        dragMovedRef.current = false;
+      }
       dragStateRef.current = null;
       setDraggingNodeId(null);
     }
@@ -240,9 +388,22 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const ctrl = event.metaKey || event.ctrlKey;
+      if (!ctrl) return;
+      if (event.key === "z" && !event.shiftKey) { event.preventDefault(); undo(); }
+      else if ((event.key === "z" && event.shiftKey) || event.key === "y") { event.preventDefault(); redo(); }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undo, redo]);
+
   function addNode(type: BlockNode["type"]) {
     const nextNode = createNode(type, nodes.length);
-    setNodes((current) => [...current, nextNode]);
+    const nextNodes = [...nodes, nextNode];
+    setNodes(nextNodes);
+    pushHistory(nextNodes, edges);
     setSelected({ kind: "node", nodeId: nextNode.id });
     setConnectionError("");
     setProjectStatus("");
@@ -259,6 +420,9 @@ export function App() {
     setNodes(presetGraph.nodes);
     setEdges(presetGraph.edges);
     setTraining(presetGraph.training);
+    historyRef.current = [{ nodes: presetGraph.nodes, edges: presetGraph.edges, training: presetGraph.training }];
+    historyPosRef.current = 0;
+    setHistoryPos(0);
     setSelected({ kind: "training" });
     setPendingConnectionSourceId(null);
     setConnectionError("");
@@ -286,6 +450,9 @@ export function App() {
         setNodes(importedGraph.nodes);
         setEdges(importedGraph.edges);
         setTraining(importedGraph.training);
+        historyRef.current = [{ nodes: importedGraph.nodes, edges: importedGraph.edges, training: importedGraph.training }];
+        historyPosRef.current = 0;
+        setHistoryPos(0);
         setSelected({ kind: "training" });
         setPendingConnectionSourceId(null);
         setConnectionError("");
@@ -305,6 +472,9 @@ export function App() {
         setNodes(importedGraph.nodes);
         setEdges(importedGraph.edges);
         setTraining(importedGraph.training);
+        historyRef.current = [{ nodes: importedGraph.nodes, edges: importedGraph.edges, training: importedGraph.training }];
+        historyPosRef.current = 0;
+        setHistoryPos(0);
         setSelected({ kind: "training" });
         setPendingConnectionSourceId(null);
         setConnectionError("");
@@ -321,39 +491,30 @@ export function App() {
   }
 
   function updateNodeConfig(nodeId: string, field: BlockField, rawValue: string) {
-    setNodes((current) =>
-      current.map((node) => {
-        if (node.id !== nodeId) {
-          return node;
-        }
-
-        let nextValue: string | number | boolean = rawValue;
-        if (field.type === "number") {
-          nextValue = Number(rawValue);
-        } else if (field.type === "boolean") {
-          nextValue = rawValue === "true";
-        }
-
-        return {
-          ...node,
-          config: {
-            ...node.config,
-            [field.key]: nextValue
-          }
-        };
-      })
+    let nextValue: string | number | boolean = rawValue;
+    if (field.type === "number") nextValue = Number(rawValue);
+    else if (field.type === "boolean") nextValue = rawValue === "true";
+    const nextNodes = nodes.map((node) =>
+      node.id !== nodeId ? node : { ...node, config: { ...node.config, [field.key]: nextValue } }
     );
+    setNodes(nextNodes);
+    pushHistory(nextNodes, edges);
   }
 
   function removeNode(nodeId: string) {
-    setNodes((current) => current.filter((node) => node.id !== nodeId));
-    setEdges((current) => current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    const nextNodes = nodes.filter((node) => node.id !== nodeId);
+    const nextEdges = edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    pushHistory(nextNodes, nextEdges);
     setSelected({ kind: "training" });
     setProjectStatus("");
   }
 
   function removeEdge(edgeId: string) {
-    setEdges((current) => current.filter((edge) => edge.id !== edgeId));
+    const nextEdges = edges.filter((edge) => edge.id !== edgeId);
+    setEdges(nextEdges);
+    pushHistory(nodes, nextEdges);
     setProjectStatus("");
   }
 
@@ -390,22 +551,18 @@ export function App() {
       return;
     }
 
-    setEdges((current) => {
-      const alreadyExists = current.some((edge) => edge.source === pendingConnectionSourceId && edge.target === targetNodeId);
-      if (alreadyExists) {
-        setConnectionError("That connection already exists.");
-        return current;
-      }
-
-      return [
-        ...current,
-        {
-          id: `edge-${crypto.randomUUID().slice(0, 8)}`,
-          source: pendingConnectionSourceId,
-          target: targetNodeId
-        }
-      ];
-    });
+    const alreadyExists = edges.some((edge) => edge.source === pendingConnectionSourceId && edge.target === targetNodeId);
+    if (alreadyExists) {
+      setConnectionError("That connection already exists.");
+      setPendingConnectionSourceId(null);
+      return;
+    }
+    const nextEdges = [
+      ...edges,
+      { id: `edge-${crypto.randomUUID().slice(0, 8)}`, source: pendingConnectionSourceId, target: targetNodeId }
+    ];
+    setEdges(nextEdges);
+    pushHistory(nodes, nextEdges);
     setConnectionError("");
     setPendingConnectionSourceId(null);
   }
@@ -439,10 +596,18 @@ export function App() {
       setNodes(result.document.graph.nodes);
       setEdges(result.document.graph.edges);
       setTraining(result.document.graph.training);
+      historyRef.current = [{
+        nodes: result.document.graph.nodes,
+        edges: result.document.graph.edges,
+        training: result.document.graph.training
+      }];
+      historyPosRef.current = 0;
+      setHistoryPos(0);
       setSelected({ kind: "training" });
       setPendingConnectionSourceId(null);
       setConnectionError("");
       setExportPreview(null);
+      setCopyStatus("idle");
       setProjectStatus(`Loaded ${result.fileName}.`);
     } catch (error) {
       setProjectStatus(error instanceof Error ? error.message : "Failed to load project.");
@@ -479,16 +644,92 @@ export function App() {
     }
   }
 
+  function openExportPreview(preview: ExportPreview) {
+    if (preview === "json") {
+      setJsonEditorText(exportedJson);
+      setJsonEditorValidation(validateJsonEditorContents(exportedJson));
+    }
+    setExportPreview(preview);
+  }
+
+  function handleJsonEditorChange(nextContents: string) {
+    setJsonEditorText(nextContents);
+    setJsonEditorValidation(validateJsonEditorContents(nextContents));
+  }
+
+  function applyJsonEditorChanges() {
+    if (!jsonEditorValidation.ok || !jsonEditorValidation.graph) {
+      return;
+    }
+
+    const nextGraph = jsonEditorValidation.graph;
+    setNodes(nextGraph.nodes);
+    setEdges(nextGraph.edges);
+    setTraining(nextGraph.training);
+    pushHistory(nextGraph.nodes, nextGraph.edges, nextGraph.training);
+    setSelected({ kind: "training" });
+    setSelectedEdgeId(null);
+    setPendingConnectionSourceId(null);
+    setConnectionError("");
+    setCopyStatus("idle");
+    setProjectStatus("Applied Graph JSON changes.");
+
+    const normalized = JSON.stringify(nextGraph, null, 2);
+    setJsonEditorText(normalized);
+    setJsonEditorValidation(validateJsonEditorContents(normalized));
+  }
+
+  function updateTraining(nextTraining: ModelGraph["training"]) {
+    setTraining(nextTraining);
+    pushHistory(nodesRef.current, edgesRef.current, nextTraining);
+  }
+
+  function fitToScreen() {
+    const canvas = canvasRef.current;
+    if (!canvas || nodes.length === 0) return;
+
+    const NODE_W = 200;
+    const NODE_H = 80;
+    const PADDING = 48;
+
+    const minX = Math.min(...nodes.map((n) => n.position.x));
+    const minY = Math.min(...nodes.map((n) => n.position.y));
+    const maxX = Math.max(...nodes.map((n) => n.position.x + NODE_W));
+    const maxY = Math.max(...nodes.map((n) => n.position.y + NODE_H));
+
+    const contentW = maxX - minX;
+    const contentH = maxY - minY;
+    const canvasW = canvas.clientWidth;
+    const canvasH = canvas.clientHeight;
+
+    const newZoom = Math.min(
+      (canvasW - PADDING * 2) / contentW,
+      (canvasH - PADDING * 2) / contentH,
+      3
+    );
+    const clampedZoom = Math.max(0.15, newZoom);
+
+    const centerX = minX + contentW / 2;
+    const centerY = minY + contentH / 2;
+
+    setZoom(clampedZoom);
+    setPan({
+      x: canvasW / 2 - centerX * clampedZoom,
+      y: canvasH / 2 - centerY * clampedZoom
+    });
+  }
+
   function startDraggingNode(event: ReactPointerEvent<HTMLButtonElement>, node: BlockNode) {
     if (!canvasRef.current) {
       return;
     }
 
     const nodeBounds = event.currentTarget.getBoundingClientRect();
+    const currentZoom = zoomRef.current;
     dragStateRef.current = {
       nodeId: node.id,
-      pointerOffsetX: event.clientX - nodeBounds.left,
-      pointerOffsetY: event.clientY - nodeBounds.top
+      pointerOffsetX: (event.clientX - nodeBounds.left) / currentZoom,
+      pointerOffsetY: (event.clientY - nodeBounds.top) / currentZoom
     };
     setDraggingNodeId(node.id);
     setSelected({ kind: "node", nodeId: node.id });
@@ -529,27 +770,25 @@ export function App() {
           draggingNodeId={draggingNodeId}
           pendingConnectionSourceId={pendingConnectionSourceId}
           connectionError={connectionError}
+          selectedEdgeId={selectedEdgeId}
+          zoom={zoom}
+          pan={pan}
+          onZoomChange={setZoom}
+          onPanChange={setPan}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          onFitToScreen={fitToScreen}
           onCancelConnection={cancelPendingConnection}
           onShowTraining={() => setSelected({ kind: "training" })}
-          onSelectNode={(nodeId) => setSelected({ kind: "node", nodeId })}
+          onSelectNode={(nodeId) => { setSelected({ kind: "node", nodeId }); setSelectedEdgeId(null); }}
+          onSelectEdge={setSelectedEdgeId}
+          onRemoveEdge={removeEdge}
           onStartDrag={startDraggingNode}
           onBeginConnection={beginConnection}
           onCompleteConnection={completeConnection}
           onPreventHandleFocus={preventFocusScroll}
-        />
-
-        <ConnectionsPanel edges={edges} onRemoveEdge={removeEdge} />
-
-        <ExportPanel
-          exportedJson={exportedJson}
-          exportedPyTorch={exportedPyTorch}
-          exportedProject={exportedProject}
-          exportPreview={exportPreview}
-          copyStatus={copyStatus}
-          onOpenPreview={setExportPreview}
-          onCopy={copyText}
-          onDownloadText={downloadTextFile}
-          onDownloadProject={downloadProjectArchive}
         />
       </main>
 
@@ -562,34 +801,56 @@ export function App() {
             onDelete={removeNode}
           />
         ) : (
-          <TrainingInspector training={training} warnings={trainingWarnings} onChange={setTraining} />
+          <TrainingInspector training={training} warnings={trainingWarnings} onChange={updateTraining} />
         )}
 
         <section className="issues-panel">
-          <div className="panel-header">
-            <p className="eyebrow">Validation</p>
-            <h2>Issues</h2>
+          <div className="panel-header row">
+            <div>
+              <p className="eyebrow">Validation</p>
+              <h2>Issues</h2>
+            </div>
+            {issues.length > 0 && (
+              <div className="issues-counts">
+                {errorCount > 0 && <span className="issues-count error">{errorCount} error{errorCount !== 1 ? "s" : ""}</span>}
+                {warningCount > 0 && <span className="issues-count warning">{warningCount} warning{warningCount !== 1 ? "s" : ""}</span>}
+              </div>
+            )}
           </div>
           {issues.length === 0 ? <p className="success-copy">Graph looks valid at this layer.</p> : null}
-          {issues.map((issue) => {
-            const formattedIssue = formatValidationIssue(issue);
-            return (
+          {formattedIssues.map(({ raw, fmt }) => (
             <div
-              key={`${issue.code}-${issue.message}-${issue.nodeId ?? ""}-${issue.edgeId ?? ""}`}
-              className={`issue-card ${formattedIssue.severity}`}
+              key={`${raw.code}-${raw.message}-${raw.nodeId ?? ""}-${raw.edgeId ?? ""}`}
+              className={`issue-card ${fmt.severity}`}
             >
               <div className="issue-header">
-                <strong>{formattedIssue.title}</strong>
-                <span className={`issue-badge ${formattedIssue.severity}`}>{formattedIssue.severity}</span>
+                <strong>{fmt.title}</strong>
+                <span className={`issue-badge ${fmt.severity}`}>{fmt.severity}</span>
               </div>
-              <span>{formattedIssue.message}</span>
-              {(issue.nodeId ?? issue.edgeId) ? (
-                <span className="issue-location">{issue.nodeId ? `Node: ${issue.nodeId}` : `Edge: ${issue.edgeId}`}</span>
+              <span>{fmt.message}</span>
+              {(raw.nodeId ?? raw.edgeId) ? (
+                <span className="issue-location">{raw.nodeId ? `Node: ${raw.nodeId}` : `Edge: ${raw.edgeId}`}</span>
               ) : null}
             </div>
-            );
-          })}
+          ))}
         </section>
+
+        <ExportPanel
+          exportedJson={exportedJson}
+          exportedPyTorch={exportedPyTorch}
+          exportedProject={exportedProject}
+          exportPreview={exportPreview}
+          copyStatus={copyStatus}
+          jsonEditorValue={jsonEditorText}
+          jsonEditorStatus={jsonEditorValidation.message}
+          jsonEditorCanApply={jsonEditorValidation.ok}
+          onJsonEditorChange={handleJsonEditorChange}
+          onApplyJsonEditor={applyJsonEditorChanges}
+          onOpenPreview={openExportPreview}
+          onCopy={copyText}
+          onDownloadText={downloadTextFile}
+          onDownloadProject={downloadProjectArchive}
+        />
       </aside>
     </div>
   );

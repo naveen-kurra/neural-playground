@@ -1,239 +1,140 @@
-import { getBlockDefinition, type BlockRuleSpec, type ModelGraph } from "@neural-playground/block-schema";
+import { getBlockDefinition, type BlockRuleCondition, type BlockRuleSpec, type ModelGraph } from "@neural-playground/block-schema";
 
 import { inferNodeSequenceDim, numberConfig } from "./inference";
 import type { ValidationIssue } from "./issues";
-import { getRuleMessage } from "./schema-rules";
 
-type NodeRuleHandler = (
+function fieldNumber(node: ModelGraph["nodes"][number], key: string | undefined): number | null {
+  if (!key) return null;
+  return numberConfig((node.config as Record<string, unknown>)[key]);
+}
+
+function conditionMatches(node: ModelGraph["nodes"][number], when: BlockRuleCondition | undefined): boolean {
+  if (!when) return true;
+  const value = (node.config as Record<string, unknown>)[when.field];
+  if (when.equals !== undefined) {
+    return value === when.equals;
+  }
+  if (when.notEquals !== undefined) {
+    return value !== when.notEquals;
+  }
+  return true;
+}
+
+function issue(node: ModelGraph["nodes"][number], spec: BlockRuleSpec, message?: string): ValidationIssue {
+  return {
+    code: spec.code,
+    message: message ?? spec.description,
+    nodeId: node.id
+  };
+}
+
+function missingRuleMetadataIssue(node: ModelGraph["nodes"][number], spec: BlockRuleSpec, fieldName: string): ValidationIssue {
+  return issue(node, {
+    ...spec,
+    code: "unknown_validation_rule",
+    description: `${node.type} rule '${spec.code}' is missing required metadata: ${fieldName}.`
+  });
+}
+
+function validateRule(
   node: ModelGraph["nodes"][number],
   inferredSequenceDims: Map<string, number | null>,
   spec: BlockRuleSpec
-) => ValidationIssue[];
-
-const nodeRuleHandlers: Record<string, NodeRuleHandler> = {
-  invalid_d_model(node) {
-    const dModel = numberConfig(node.config.dModel);
-    if (dModel !== null && dModel > 0) {
-      return [];
-    }
-    return [
-      {
-        code: "invalid_d_model",
-        message: getRuleMessage(node.type, "invalid_d_model", "TransformerBlock requires a positive model dimension."),
-        nodeId: node.id
-      }
-    ];
-  },
-  invalid_num_heads(node) {
-    const numHeads = numberConfig(node.config.numHeads);
-    if (numHeads !== null && numHeads > 0) {
-      return [];
-    }
-    return [
-      {
-        code: "invalid_num_heads",
-        message: getRuleMessage(node.type, "invalid_num_heads", "TransformerBlock requires a positive number of heads."),
-        nodeId: node.id
-      }
-    ];
-  },
-  heads_dimension_mismatch(node) {
-    const dModel = numberConfig(node.config.dModel);
-    const numHeads = numberConfig(node.config.numHeads);
-    if (dModel === null || numHeads === null || dModel <= 0 || numHeads <= 0 || dModel % numHeads === 0) {
-      return [];
-    }
-    return [
-      {
-        code: "heads_dimension_mismatch",
-        message: `${getRuleMessage(
-          node.type,
-          "heads_dimension_mismatch",
-          "Model dimension must be divisible by the number of heads."
-        )} Found d_model=${dModel}, numHeads=${numHeads}.`,
-        nodeId: node.id
-      }
-    ];
-  },
-  invalid_ffn_hidden(node) {
-    const ffnHidden = numberConfig(node.config.ffnHidden);
-    if (ffnHidden !== null && ffnHidden > 0) {
-      return [];
-    }
-    return [
-      {
-        code: "invalid_ffn_hidden",
-        message: getRuleMessage(node.type, "invalid_ffn_hidden", "TransformerBlock requires a positive FFN hidden size."),
-        nodeId: node.id
-      }
-    ];
-  },
-  invalid_expert_count(node) {
-    const numExperts = numberConfig(node.config.numExperts);
-    if (numExperts !== null && numExperts > 0) {
-      return [];
-    }
-    return [
-      {
-        code: "invalid_expert_count",
-        message: getRuleMessage(node.type, "invalid_expert_count", "MoE requires a positive number of experts."),
-        nodeId: node.id
-      }
-    ];
-  },
-  invalid_top_k(node) {
-    const topK = numberConfig(node.config.topK);
-    const numExperts = numberConfig(node.config.numExperts);
-    if (topK !== null && numExperts !== null && topK > 0 && numExperts > 0 && topK <= numExperts) {
-      return [];
-    }
-    return [
-      {
-        code: "invalid_top_k",
-        message: getRuleMessage(
-          node.type,
-          "invalid_top_k",
-          "MoE requires top-k to be positive and no greater than the number of experts."
-        ),
-        nodeId: node.id
-      }
-    ];
-  },
-  invalid_expert_hidden(node) {
-    const expertHidden = numberConfig(node.config.expertHidden);
-    if (expertHidden !== null && expertHidden > 0) {
-      return [];
-    }
-    return [
-      {
-        code: "invalid_expert_hidden",
-        message: getRuleMessage(node.type, "invalid_expert_hidden", "MoE requires a positive expert hidden size."),
-        nodeId: node.id
-      }
-    ];
-  },
-  invalid_vocab_size(node) {
-    const vocabSize = numberConfig(node.config.vocabSize);
-    if (vocabSize !== null && vocabSize > 0) {
-      return [];
-    }
-    return [
-      {
-        code: "invalid_vocab_size",
-        message: getRuleMessage(node.type, "invalid_vocab_size", "Embedding requires a positive vocab size."),
-        nodeId: node.id
-      }
-    ];
-  },
-  invalid_embedding_dim(node) {
-    const embeddingDim = numberConfig(node.config.embeddingDim);
-    if (embeddingDim !== null && embeddingDim > 0) {
-      return [];
-    }
-    return [
-      {
-        code: "invalid_embedding_dim",
-        message: getRuleMessage(node.type, "invalid_embedding_dim", "Embedding requires a positive embedding dimension."),
-        nodeId: node.id
-      }
-    ];
-  },
-  invalid_hidden_dim(node) {
-    const hiddenDim = numberConfig(node.config.hiddenDim);
-    if (hiddenDim !== null && hiddenDim > 0) {
-      return [];
-    }
-    return [
-      {
-        code: "invalid_hidden_dim",
-        message: getRuleMessage(node.type, "invalid_hidden_dim", "MLP requires a positive hidden dimension."),
-        nodeId: node.id
-      }
-    ];
-  },
-  unknown_mlp_input_dim(node, inferredSequenceDims) {
-    const inferredDim = inferNodeSequenceDim(node, inferredSequenceDims);
-    if (inferredDim !== null) {
-      return [];
-    }
-    return [
-      {
-        code: "unknown_mlp_input_dim",
-        message: getRuleMessage(
-          node.type,
-          "unknown_mlp_input_dim",
-          "MLP input dimension could not be inferred from incoming connections."
-        ),
-        nodeId: node.id
-      }
-    ];
-  },
-  unknown_moe_input_dim(node, inferredSequenceDims) {
-    const inferredDim = inferNodeSequenceDim(node, inferredSequenceDims);
-    if (inferredDim !== null) {
-      return [];
-    }
-    return [
-      {
-        code: "unknown_moe_input_dim",
-        message: getRuleMessage(
-          node.type,
-          "unknown_moe_input_dim",
-          "MoE input dimension could not be inferred from incoming connections."
-        ),
-        nodeId: node.id
-      }
-    ];
-  },
-  invalid_sequence_length(node) {
-    const sequenceLength = numberConfig(node.config.sequenceLength);
-    if (sequenceLength !== null && sequenceLength > 1) {
-      return [];
-    }
-    return [
-      {
-        code: "invalid_sequence_length",
-        message: getRuleMessage(node.type, "invalid_sequence_length", "Input requires a sequence length greater than 1."),
-        nodeId: node.id
-      }
-    ];
-  },
-  unknown_layernorm_dim(node, inferredSequenceDims) {
-    const inferredDim = inferNodeSequenceDim(node, inferredSequenceDims);
-    if (inferredDim !== null) {
-      return [];
-    }
-    return [
-      {
-        code: "unknown_layernorm_dim",
-        message: getRuleMessage(
-          node.type,
-          "unknown_layernorm_dim",
-          "LayerNorm dimension could not be inferred from incoming connections."
-        ),
-        nodeId: node.id
-      }
-    ];
-  },
-  unknown_output_dim(node, inferredSequenceDims) {
-    const incomingDim = inferNodeSequenceDim(node, inferredSequenceDims);
-    const headType = String(node.config.headType ?? "LanguageModel");
-    if (headType !== "LanguageModel" || incomingDim !== null) {
-      return [];
-    }
-    return [
-      {
-        code: "unknown_output_dim",
-        message: getRuleMessage(
-          node.type,
-          "unknown_output_dim",
-          "Output head dimension could not be inferred from incoming connections."
-        ),
-        nodeId: node.id
-      }
-    ];
+): ValidationIssue[] {
+  if (!conditionMatches(node, spec.when)) {
+    return [];
   }
-};
+
+  switch (spec.kind) {
+    case "number_gt": {
+      if (!spec.field || spec.min === undefined) {
+        return [missingRuleMetadataIssue(node, spec, "field|min")];
+      }
+      const value = fieldNumber(node, spec.field);
+      if (value !== null && value > spec.min) {
+        return [];
+      }
+      return [issue(node, spec, `${spec.description} Found ${spec.field}=${value ?? "null"}.`)];
+    }
+    case "number_in_range": {
+      if (!spec.field || spec.min === undefined || spec.max === undefined) {
+        return [missingRuleMetadataIssue(node, spec, "field|min|max")];
+      }
+      const value = fieldNumber(node, spec.field);
+      if (value !== null && value >= spec.min && value <= spec.max) {
+        return [];
+      }
+      return [issue(node, spec, `${spec.description} Found ${spec.field}=${value ?? "null"}.`)];
+    }
+    case "number_lte_field": {
+      if (!spec.field || !spec.otherField || spec.min === undefined) {
+        return [missingRuleMetadataIssue(node, spec, "field|otherField|min")];
+      }
+      const value = fieldNumber(node, spec.field);
+      const maxValue = fieldNumber(node, spec.otherField);
+      if (value !== null && maxValue !== null && value > spec.min && value <= maxValue) {
+        return [];
+      }
+      return [issue(node, spec, `${spec.description} Found ${spec.field}=${value ?? "null"}, ${spec.otherField}=${maxValue ?? "null"}.`)];
+    }
+    case "number_divisible": {
+      if (!spec.field || !spec.otherField) {
+        return [missingRuleMetadataIssue(node, spec, "field|otherField")];
+      }
+      const numerator = fieldNumber(node, spec.field);
+      const denominator = fieldNumber(node, spec.otherField);
+      if (numerator !== null && denominator !== null && denominator > 0 && numerator % denominator === 0) {
+        return [];
+      }
+      return [issue(node, spec, `${spec.description} Found ${spec.field}=${numerator ?? "null"}, ${spec.otherField}=${denominator ?? "null"}.`)];
+    }
+    case "number_lte_and_divides_field": {
+      if (!spec.field || !spec.otherField || spec.min === undefined) {
+        return [missingRuleMetadataIssue(node, spec, "field|otherField|min")];
+      }
+      const factor = fieldNumber(node, spec.field);
+      const total = fieldNumber(node, spec.otherField);
+      if (factor !== null && total !== null && factor > spec.min && factor <= total && total % factor === 0) {
+        return [];
+      }
+      return [issue(node, spec, `${spec.description} Found ${spec.field}=${factor ?? "null"}, ${spec.otherField}=${total ?? "null"}.`)];
+    }
+    case "number_equals_floor_div": {
+      if (!spec.field || !spec.otherField || !spec.divisorField) {
+        return [missingRuleMetadataIssue(node, spec, "field|otherField|divisorField")];
+      }
+      const actual = fieldNumber(node, spec.field);
+      const numerator = fieldNumber(node, spec.otherField);
+      const divisor = fieldNumber(node, spec.divisorField);
+      if (actual !== null && numerator !== null && divisor !== null && divisor > 0 && actual === Math.floor(numerator / divisor)) {
+        return [];
+      }
+      return [issue(node, spec, `${spec.description} Found ${spec.field}=${actual ?? "null"}, ${spec.otherField}=${numerator ?? "null"}, ${spec.divisorField}=${divisor ?? "null"}.`)];
+    }
+    case "sequence_dim_known": {
+      const inferredDim = inferNodeSequenceDim(node, inferredSequenceDims);
+      if (inferredDim !== null) {
+        return [];
+      }
+      return [issue(node, spec)];
+    }
+    case "output_dim_known": {
+      const inferredDim = inferNodeSequenceDim(node, inferredSequenceDims);
+      if (inferredDim !== null) {
+        return [];
+      }
+      return [issue(node, spec)];
+    }
+    default:
+      return [
+        issue(node, {
+          ...spec,
+          code: "unknown_validation_rule",
+          description: `${node.type} declares unsupported validation kind '${String((spec as { kind?: unknown }).kind)}'.`
+        })
+      ];
+  }
+}
 
 export function validateNodeConfig(
   node: ModelGraph["nodes"][number],
@@ -243,10 +144,7 @@ export function validateNodeConfig(
   const issues: ValidationIssue[] = [];
 
   for (const spec of definition.ruleSpecs) {
-    const handler = nodeRuleHandlers[spec.code];
-    if (handler) {
-      issues.push(...handler(node, inferredSequenceDims, spec));
-    }
+    issues.push(...validateRule(node, inferredSequenceDims, spec));
   }
 
   return issues;

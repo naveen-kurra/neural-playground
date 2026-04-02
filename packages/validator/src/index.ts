@@ -1,5 +1,6 @@
 import type { ModelGraph } from "@neural-playground/block-schema";
 
+import { validateConfigCompatibility } from "./config-compatibility";
 import { validateEdge } from "./edge-validation";
 import { inferSequenceDimensions } from "./inference";
 import { createValidationIssue, type ValidationIssue, type ValidationMode } from "./issues";
@@ -11,6 +12,7 @@ export * from "./inference";
 export * from "./node-validation";
 export * from "./edge-validation";
 export * from "./topology";
+export * from "./config-compatibility";
 
 export function validateGraph(graph: ModelGraph, mode: ValidationMode = "playground-valid"): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -18,6 +20,7 @@ export function validateGraph(graph: ModelGraph, mode: ValidationMode = "playgro
   const inferredSequenceDims = inferSequenceDimensions(graph);
 
   issues.push(...validateTopology(graph, mode));
+  issues.push(...validateConfigCompatibility(graph));
 
   const inputCount = graph.nodes.filter((node) => node.type === "Input").length;
   const outputCount = graph.nodes.filter((node) => node.type === "Output").length;

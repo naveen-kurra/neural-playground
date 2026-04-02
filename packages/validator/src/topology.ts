@@ -15,7 +15,9 @@ export function validateTopology(graph: ModelGraph, mode: ValidationMode): Valid
 
   const inputNodes = graph.nodes.filter((node) => node.type === "Input");
   const outputNodes = graph.nodes.filter((node) => node.type === "Output");
-  const embeddingNodes = graph.nodes.filter((node) => node.type === "Embedding");
+  const embeddingNodes = graph.nodes.filter((node) =>
+    node.type === "Embedding" || node.type === "GPT2TokenEmbedding" || node.type === "LlamaTokenEmbedding"
+  );
 
   if (inputNodes.length !== 1) {
     issues.push(createValidationIssue("export_input_count", "Export requires exactly one Input node."));
