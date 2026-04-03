@@ -660,6 +660,34 @@ button {
   color: #ffb7b0;
 }
 
+.prune-contact-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 16px 0 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 8px;
+  background: rgba(139, 92, 246, 0.08);
+  font-size: 0.9rem;
+  color: #d4c5f9;
+}
+
+.prune-contact-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #c4b5fd;
+}
+
+.prune-contact-card a {
+  color: #a78bfa;
+  text-decoration: underline;
+}
+
+.prune-contact-card a:hover {
+  color: #c4b5fd;
+}
+
 .prune-run-warning {
   margin: 8px 0 12px;
   color: #f0d890;

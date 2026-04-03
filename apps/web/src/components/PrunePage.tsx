@@ -487,6 +487,10 @@ export function PrunePage(props: PrunePageProps) {
             <strong>Readiness</strong>
             <span>{pruningReadinessMessage}</span>
           </div>
+          <div className="prune-contact-card">
+            <span className="prune-contact-title">✦ Interested in running pruning?</span>
+            <span>Reach out at <a href="mailto:naveen.research45@gmail.com">naveen.research45@gmail.com</a> — we'd love to set you up.</span>
+          </div>
           <div className="canvas-actions prune-actions">
             <button
               type="button"
