@@ -113,7 +113,7 @@ test("pruning page can inspect a mocked Hugging Face model and return to builder
 
   await expect(page.getByText("Resolved Model")).toBeVisible();
   await expect(page.getByText("microsoft/Phi-3-mini-4k-instruct")).toBeVisible();
-  await expect(page.getByText("Likely supported")).toBeVisible();
+  await expect(page.locator(".prune-badge").getByText("Likely supported")).toBeVisible();
   await expect(page.getByText("model.layers.", { exact: true })).toBeVisible();
   await expect(page.getByText("Transformer block stack detected")).toBeVisible();
 
