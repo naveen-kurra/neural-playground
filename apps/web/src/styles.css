@@ -556,9 +556,20 @@ button {
 
 .canvas-actions {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.palette .canvas-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.palette .canvas-actions .ghost-button {
+  padding: 6px 10px;
+  font-size: 0.8rem;
 }
 
 .zoom-controls {
