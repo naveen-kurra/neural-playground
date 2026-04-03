@@ -906,6 +906,13 @@ input {
   border-color: rgba(205, 96, 96, 0.3);
 }
 
+.ghost-button:disabled,
+.danger-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .form-stack {
   display: grid;
   gap: 12px;
