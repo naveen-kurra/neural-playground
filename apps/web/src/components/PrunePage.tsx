@@ -495,18 +495,16 @@ export function PrunePage(props: PrunePageProps) {
             <button
               type="button"
               className="ghost-button"
-              onClick={downloadPruningArtifacts}
-              disabled={!canDownloadArtifacts}
+              disabled
             >
               Download Pruning Artifacts
             </button>
             <button
               type="button"
               className="danger-button"
-              onClick={handleRunLocalPrune}
-              disabled={!canRunLocalPrune}
+              disabled
             >
-              {runButtonLabel}
+              Run Local Prune
             </button>
           </div>
           {canRunLocalPrune && droppedLayerIndices.length > 0 ? (
