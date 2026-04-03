@@ -125,7 +125,7 @@ async function fetchJson(url: string): Promise<Record<string, unknown>> {
   return data as Record<string, unknown>;
 }
 
-const DEFAULT_PRUNE_SERVICE_URL = "http://127.0.0.1:8787";
+const DEFAULT_PRUNE_SERVICE_URL = import.meta.env.VITE_PRUNE_SERVICE_URL ?? "http://127.0.0.1:8787";
 
 export async function fetchHuggingFaceModelViaService(
   modelIdInput: string,

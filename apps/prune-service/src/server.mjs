@@ -11,7 +11,7 @@ const serviceConfig = existsSync(configPath)
   ? JSON.parse(readFileSync(configPath, "utf8"))
   : {};
 const HOST = process.env.PRUNE_SERVICE_HOST || serviceConfig.host || "127.0.0.1";
-const PORT = Number(process.env.PRUNE_SERVICE_PORT || serviceConfig.port || 8787);
+const PORT = Number(process.env.PORT || process.env.PRUNE_SERVICE_PORT || serviceConfig.port || 8787);
 const runnerPath = join(repoRoot, "scripts", "prune_checkpoint.py");
 const preferredPython = process.env.PRUNE_PYTHON
   || String(serviceConfig.pythonPath ?? "").trim()

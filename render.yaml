@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: neural-playground-prune
+    runtime: node
+    buildCommand: npm install
+    startCommand: node apps/prune-service/src/server.mjs
+    envVars:
+      - key: PRUNE_SERVICE_HOST
+        value: 0.0.0.0
+
+  - type: web
+    name: neural-playground-web
+    runtime: static
+    buildCommand: npm install && npm run build --workspace @neural-playground/web
+    staticPublishPath: apps/web/dist
+    envVars:
+      - key: VITE_PRUNE_SERVICE_URL
+        fromService:
+          name: neural-playground-prune
+          type: web
+          property: host
