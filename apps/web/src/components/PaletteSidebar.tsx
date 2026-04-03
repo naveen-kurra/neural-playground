@@ -75,7 +75,7 @@ export function PaletteSidebar(props: PaletteSidebarProps) {
           <button type="button" className="ghost-button" onClick={onLoadClick}>
             Load
           </button>
-          <button type="button" className="ghost-button" onClick={onOpenPruningTool}>
+          <button type="button" className="ghost-button accent-button" onClick={onOpenPruningTool}>
             Try Pruning Tool
           </button>
         </div>

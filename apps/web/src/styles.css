@@ -912,6 +912,17 @@ input {
   padding: 10px 14px;
 }
 
+.accent-button {
+  border-color: rgba(139, 92, 246, 0.6);
+  background: rgba(139, 92, 246, 0.12);
+  color: #c4b5fd;
+}
+
+.accent-button:hover {
+  border-color: rgba(139, 92, 246, 0.9);
+  background: rgba(139, 92, 246, 0.22);
+}
+
 .danger-button {
   background: rgba(71, 24, 24, 0.95);
   border-color: rgba(205, 96, 96, 0.3);
