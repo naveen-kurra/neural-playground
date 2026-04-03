@@ -59,7 +59,7 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
           <div className="export-buttons">
             <button type="button" className="ghost-button export-btn" onClick={() => onOpenPreview("json")}>View</button>
             <button type="button" className="ghost-button export-btn" onClick={() => onCopy(exportedJson, "json")}>Copy</button>
-            <button type="button" className="ghost-button export-btn" onClick={() => onDownloadText("model-graph.json", exportedJson)}>Download</button>
+            <button type="button" className="ghost-button export-btn" disabled>Download</button>
           </div>
         </div>
 
@@ -69,7 +69,7 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
           <div className="export-buttons">
             <button type="button" className="ghost-button export-btn" onClick={() => onOpenPreview("pytorch")} disabled={!exportedPyTorch.ok}>View</button>
             <button type="button" className="ghost-button export-btn" onClick={() => exportedPyTorch.ok && onCopy(exportedPyTorch.value, "pytorch")} disabled={!exportedPyTorch.ok}>Copy</button>
-            <button type="button" className="ghost-button export-btn" onClick={() => exportedPyTorch.ok && onDownloadText("model.py", exportedPyTorch.value)} disabled={!exportedPyTorch.ok}>Download</button>
+            <button type="button" className="ghost-button export-btn" disabled>Download</button>
           </div>
         </div>
 
@@ -77,7 +77,7 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
           <strong>Full Project</strong>
           {!exportedProject.ok ? <span className="export-warning">Unavailable: {exportedProject.error}</span> : null}
           <div className="export-buttons">
-            <button type="button" className="ghost-button export-btn" onClick={onDownloadProject} disabled={!exportedProject.ok}>Download Project</button>
+            <button type="button" className="ghost-button export-btn" disabled>Download Project</button>
           </div>
         </div>
       </div>
@@ -102,7 +102,7 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
                 {exportPreview === "json" && (
                   <>
                     <button type="button" className="ghost-button" onClick={() => onCopy(jsonEditorValue, "json")}>Copy</button>
-                    <button type="button" className="ghost-button" onClick={() => onDownloadText("model-graph.json", jsonEditorValue)}>Download</button>
+                    <button type="button" className="ghost-button" disabled>Download</button>
                     <button type="button" className="ghost-button" onClick={onApplyJsonEditor} disabled={!jsonEditorCanApply}>Apply to Graph</button>
                   </>
                 )}
@@ -110,7 +110,7 @@ export function ExportPanel<TProjectFiles>(props: ExportPanelProps<TProjectFiles
                   <>
                     <button type="button" className="ghost-button" onClick={() => codeViewerRef.current?.openSearch()}>Search</button>
                     <button type="button" className="ghost-button" onClick={() => onCopy(exportedPyTorch.value, "pytorch")}>Copy</button>
-                    <button type="button" className="ghost-button" onClick={() => onDownloadText("model.py", exportedPyTorch.value)}>Download</button>
+                    <button type="button" className="ghost-button" disabled>Download</button>
                   </>
                 )}
                 <button type="button" className="ghost-button" onClick={() => onOpenPreview(null)}>Close</button>
