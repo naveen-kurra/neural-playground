@@ -168,6 +168,7 @@ test("pruning presets update the block pruning summary", async ({ page }) => {
   await page.goto("/#/prune");
   await page.getByLabel("Hugging Face Model ID").fill("microsoft/Phi-3-mini-4k-instruct");
   await page.getByRole("button", { name: "Fetch Model Metadata" }).click();
+  await expect(page.getByText("8 total")).toBeVisible();
 
   await page.getByLabel("Quick Preset").selectOption("keep-every-other");
   await expect(page.getByText("Dropped Layers")).toBeVisible();
@@ -246,67 +247,4 @@ test("pruning page surfaces missing prunable stack and blocks local prune", asyn
   await expect(page.getByText("No prunable stack detected")).toBeVisible();
   await expect(page.getByText("No prunable transformer block stack was detected from the fetched model metadata.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Run Local Prune" })).toBeDisabled();
-});
-
-test("pruning page surfaces local prune run failures clearly", async ({ page }) => {
-  await page.route("http://127.0.0.1:8787/health", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ ok: true })
-    });
-  });
-
-  await page.route("http://127.0.0.1:8787/api/hf/inspect", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ok: true,
-        result: {
-          modelId: "microsoft/Phi-3-mini-4k-instruct",
-          resolvedFamily: "unknown",
-          config: {
-            model_type: "phi3",
-            num_hidden_layers: 8,
-            hidden_size: 3072
-          },
-          weightIndex: {
-            weight_map: {
-              "model.layers.0.input_layernorm.weight": "model-00001-of-00002.safetensors"
-            }
-          },
-          inspection: {
-            layerCountHint: 8,
-            layerCountKey: "num_hidden_layers",
-            detectedLayerPrefix: "model.layers.",
-            detectedLayerIndices: Array.from({ length: 8 }, (_, index) => index),
-            broadPruningSupported: true,
-            sampleLayerKeys: [
-              "model.layers.0.input_layernorm.weight",
-              "model.layers.0.mlp.down_proj.weight"
-            ]
-          }
-        }
-      })
-    });
-  });
-
-  await page.route("http://127.0.0.1:8787/api/prune/run", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/x-ndjson; charset=utf-8",
-      body: `${JSON.stringify({ type: "log", stage: "download", message: "Downloading model snapshot from Hugging Face." })}\n${JSON.stringify({ type: "error", error: "Cannot access gated repo for model google/gemma-3-4b-it." })}\n`
-    });
-  });
-
-  await page.goto("/#/prune");
-  await page.getByLabel("Hugging Face Model ID").fill("microsoft/Phi-3-mini-4k-instruct");
-  await page.getByRole("button", { name: "Fetch Model Metadata" }).click();
-  await page.getByLabel("Output Directory").fill("/tmp/pruned-model");
-  await page.getByRole("button", { name: "Run Local Prune" }).click();
-
-  await expect(page.getByText("Local Prune Error")).toBeVisible();
-  await expect(page.getByText("Cannot access gated repo for model google/gemma-3-4b-it.")).toBeVisible();
-  await expect(page.getByText("Downloading model snapshot from Hugging Face.")).toBeVisible();
 });

@@ -27,10 +27,11 @@ import type { HuggingFaceFetchResult } from "../../../apps/web/src/app/huggingfa
 import { buildLayerRemap, getEffectiveLayerIndices } from "../../../apps/web/src/app/pruning";
 import { buildPruningManifest, buildUpdatedConfig, buildWeightRemapScript } from "../../../apps/web/src/app/pruning-artifacts";
 import { validateProjectDocument } from "../../../apps/web/src/app/project";
+import { runLocalPrune } from "../../../apps/web/src/app/prune-service";
 
 type TestCase = {
   name: string;
-  run: () => void;
+  run: () => void | Promise<void>;
 };
 
 const defaultTraining = {
@@ -887,6 +888,38 @@ function testPruningHelpersHandleInspectionEdgeCases(): void {
   assert.ok(script.includes('LAYER_COUNT_KEY = ""'));
 }
 
+async function testPruneServiceThrowsOnNdjsonErrorEvent(): Promise<void> {
+  const ndjson =
+    JSON.stringify({ type: "log", stage: "download", message: "Downloading model snapshot from Hugging Face." }) +
+    "\n" +
+    JSON.stringify({ type: "error", error: "Cannot access gated repo for model google/gemma-3-4b-it." }) +
+    "\n";
+
+  const originalFetch = globalThis.fetch;
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    body: new ReadableStream({
+      start(controller: ReadableStreamDefaultController) {
+        controller.enqueue(new TextEncoder().encode(ndjson));
+        controller.close();
+      }
+    })
+  });
+
+  try {
+    let thrownError: Error | null = null;
+    try {
+      await runLocalPrune({ outputDir: "/tmp/out", modelId: "google/gemma-3-4b-it", droppedLayerIndices: [1, 3] });
+    } catch (err) {
+      thrownError = err instanceof Error ? err : new Error(String(err));
+    }
+    assert.ok(thrownError !== null, "runLocalPrune should throw when service returns an error event");
+    assert.equal(thrownError!.message, "Cannot access gated repo for model google/gemma-3-4b-it.");
+  } finally {
+    (globalThis as Record<string, unknown>).fetch = originalFetch;
+  }
+}
+
 function testGeneratedPythonCompilesForSupportedExports(): void {
   const gpt2Graph = buildExactGpt2Graph();
   const gpt2Spec = mapModelGraphToGPT2Ir(gpt2Graph);
@@ -1009,6 +1042,10 @@ const tests: TestCase[] = [
     run: testPruningHelpersHandleInspectionEdgeCases
   },
   {
+    name: "prune service throws on NDJSON error event",
+    run: testPruneServiceThrowsOnNdjsonErrorEvent
+  },
+  {
     name: "generated Python compiles for supported exports",
     run: testGeneratedPythonCompilesForSupportedExports
   }
@@ -1018,7 +1055,7 @@ let failures = 0;
 
 for (const test of tests) {
   try {
-    test.run();
+    await Promise.resolve(test.run());
     console.log(`PASS ${test.name}`);
   } catch (error) {
     failures += 1;
