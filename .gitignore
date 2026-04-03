@@ -6,3 +6,5 @@ build/
 coverage/
 *.log
 apps/prune-service/base_conf.json
+playwright-report/
+test-results/

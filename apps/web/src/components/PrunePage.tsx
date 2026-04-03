@@ -79,6 +79,34 @@ export function PrunePage(props: PrunePageProps) {
     }
     return Number(((memoryDeltaMiB / original) * 100).toFixed(2));
   }, [memoryDeltaMiB, runResult]);
+  const hasDetectedPrunableStack = Boolean(fetchedModel?.inspection.detectedLayerPrefix) && actualLayerCount > 0;
+  const canDownloadArtifacts = Boolean(pruningManifest && updatedConfig && keptLayerIndices.length > 0 && hasDetectedPrunableStack);
+  const canRunLocalPrune = Boolean(
+    fetchedModel &&
+    keptLayerIndices.length > 0 &&
+    outputDir.trim() &&
+    hasDetectedPrunableStack &&
+    runState !== "checking" &&
+    runState !== "running"
+  );
+  const pruningReadinessMessage = useMemo(() => {
+    if (!fetchedModel) {
+      return "Fetch a model first to inspect whether a prunable transformer block stack exists.";
+    }
+    if (!hasDetectedPrunableStack) {
+      return "No prunable transformer block stack was detected from the fetched model metadata.";
+    }
+    if (!fetchedModel.inspection.broadPruningSupported) {
+      return "Metadata inspection needs manual review before broad whole-block pruning is trusted.";
+    }
+    if (!outputDir.trim()) {
+      return "Choose an output directory to enable the local prune run.";
+    }
+    if (keptLayerIndices.length === 0) {
+      return "Keep at least one transformer block before pruning.";
+    }
+    return "Ready to prune the detected transformer block stack.";
+  }, [fetchedModel, hasDetectedPrunableStack, outputDir, keptLayerIndices.length]);
 
   async function handleFetchModel() {
     try {
@@ -241,7 +269,12 @@ export function PrunePage(props: PrunePageProps) {
               {fetchState === "loading" ? "Fetching..." : "Fetch Model Metadata"}
             </button>
           </div>
-          {fetchError ? <p className="project-status">{fetchError}</p> : null}
+          {fetchError ? (
+            <div className="prune-result">
+              <strong>Metadata Error</strong>
+              <span>{fetchError}</span>
+            </div>
+          ) : null}
           {fetchedModel ? (
             <div className="prune-result">
               <strong>Resolved Model</strong>
@@ -250,6 +283,8 @@ export function PrunePage(props: PrunePageProps) {
               <span>{fetchedModel.resolvedFamily}</span>
               <strong>Broad Pruning Support</strong>
               <span>{fetchedModel.inspection.broadPruningSupported ? "Likely supported" : "Needs manual review"}</span>
+              <strong>Pruning Readiness</strong>
+              <span>{hasDetectedPrunableStack ? "Transformer block stack detected" : "No prunable stack detected"}</span>
               <strong>Weight Index</strong>
               <span>{fetchedModel.weightIndex ? "Found model.safetensors.index.json" : "No safetensors index found"}</span>
               <strong>Layer Count Hint</strong>
@@ -366,13 +401,15 @@ export function PrunePage(props: PrunePageProps) {
             <span>{keptLayerIndices.length > 0 ? keptLayerIndices.slice(0, 12).join(", ") : "None"}{keptLayerIndices.length > 12 ? " ..." : ""}</span>
             <strong>Fetch Status</strong>
             <span>{fetchState}</span>
+            <strong>Readiness</strong>
+            <span>{pruningReadinessMessage}</span>
           </div>
           <div className="canvas-actions prune-actions">
             <button
               type="button"
               className="ghost-button"
               onClick={downloadPruningArtifacts}
-              disabled={!pruningManifest || keptLayerIndices.length === 0}
+              disabled={!canDownloadArtifacts}
             >
               Download Pruning Artifacts
             </button>
@@ -380,12 +417,17 @@ export function PrunePage(props: PrunePageProps) {
               type="button"
               className="ghost-button"
               onClick={handleRunLocalPrune}
-              disabled={!fetchedModel || keptLayerIndices.length === 0 || !outputDir.trim() || runState === "checking" || runState === "running"}
+              disabled={!canRunLocalPrune}
             >
               {runState === "checking" ? "Checking Service..." : runState === "running" ? "Pruning..." : "Run Local Prune"}
             </button>
           </div>
-          {runError ? <p className="project-status">{runError}</p> : null}
+          {runError ? (
+            <div className="prune-result">
+              <strong>Local Prune Error</strong>
+              <span>{runError}</span>
+            </div>
+          ) : null}
           {runResult?.validation.ok ? <p className="project-status">Pruned model validated successfully.</p> : null}
           {runResult ? (
             <div className="prune-result">

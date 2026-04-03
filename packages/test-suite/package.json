@@ -1,0 +1,17 @@
+{
+  "name": "@neural-playground/test-suite",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js",
+    "check": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js",
+    "test": "node dist/index.js"
+  },
+  "dependencies": {
+    "@neural-playground/block-schema": "*",
+    "@neural-playground/exporter-pytorch": "*",
+    "@neural-playground/ir-schema": "*",
+    "@neural-playground/validator": "*"
+  }
+}

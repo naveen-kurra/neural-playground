@@ -1,7 +1,7 @@
 import { getBlockDefinition, type BlockRuleCondition, type BlockRuleSpec, type ModelGraph } from "@neural-playground/block-schema";
 
 import { inferNodeSequenceDim, numberConfig } from "./inference";
-import type { ValidationIssue } from "./issues";
+import type { ValidationIssue, ValidationMode } from "./issues";
 
 function fieldNumber(node: ModelGraph["nodes"][number], key: string | undefined): number | null {
   if (!key) return null;
@@ -138,13 +138,36 @@ function validateRule(
 
 export function validateNodeConfig(
   node: ModelGraph["nodes"][number],
-  inferredSequenceDims: Map<string, number | null>
+  inferredSequenceDims: Map<string, number | null>,
+  mode: ValidationMode = "playground-valid"
 ): ValidationIssue[] {
   const definition = getBlockDefinition(node.type);
   const issues: ValidationIssue[] = [];
 
   for (const spec of definition.ruleSpecs) {
     issues.push(...validateRule(node, inferredSequenceDims, spec));
+  }
+
+  if (node.type === "Softmax") {
+    const axis = numberConfig((node.config as Record<string, unknown>).axis);
+    if (axis !== null && axis !== -1) {
+      issues.push({
+        code: "softmax_axis_invalid",
+        message: "Softmax must operate on the last logits dimension (axis = -1).",
+        nodeId: node.id
+      });
+    }
+  }
+
+  if (node.type === "Output" && mode !== "playground-valid") {
+    const headType = String((node.config as Record<string, unknown>).headType ?? "LanguageModel");
+    if (headType === "Classifier") {
+      issues.push({
+        code: "classifier_output_unimplemented",
+        message: "Classifier output mode is not implemented yet. Use LanguageModel for export.",
+        nodeId: node.id
+      });
+    }
   }
 
   return issues;

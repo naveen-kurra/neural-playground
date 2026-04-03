@@ -43,9 +43,17 @@ export function validateConfigCompatibility(graph: ModelGraph): ValidationIssue[
     const isMergeNode = def.inputContracts.length > 0 &&
       def.inputContracts.every((c) => c.kind === "sequence") &&
       !def.sequenceDimField;
+    const incoming = graph.edges.filter((e) => e.target === node.id);
+
+    if (node.type === "Add" && incoming.length !== 2) {
+      issues.push({
+        code: "add_input_arity",
+        message: "Add requires exactly two incoming sequence connections.",
+        nodeId: node.id
+      });
+    }
 
     if (isMergeNode) {
-      const incoming = graph.edges.filter((e) => e.target === node.id);
       const dims = incoming
         .map((e) => nodeMap.get(e.source))
         .filter((n): n is Node => n !== undefined)

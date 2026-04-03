@@ -20,7 +20,14 @@ import {
   projectLlamaIrToModelGraph
 } from "@neural-playground/ir-schema";
 import JSZip from "jszip";
-import { validateGraph, type ValidationIssue } from "@neural-playground/validator";
+import {
+  inferSequenceDimensions,
+  validateConfigCompatibility,
+  validateEdge,
+  validateGraph,
+  validateTopology,
+  type ValidationIssue
+} from "@neural-playground/validator";
 import { createNode, defaultTrainingConfig } from "./app/defaults";
 import { normalizeGraphForGenericExport } from "./app/export-normalization";
 import { downloadBlobFile, downloadTextFile } from "./app/file-utils";
@@ -49,6 +56,30 @@ type JsonEditorValidation = {
   message: string;
   graph: ModelGraph | null;
 };
+
+const UNIVERSAL_EXPORT_BLOCKING_CODES = new Set([
+  "graph_cycle",
+  "export_input_count",
+  "export_output_count",
+  "decoder_output_head",
+  "dangling_edge",
+  "shape_mismatch",
+  "dimension_mismatch",
+  "missing_input",
+  "missing_output",
+  "missing_incoming_edge",
+  "missing_outgoing_edge",
+  "node_input_arity",
+  "node_output_arity",
+  "config_dim_mismatch",
+  "config_vocab_mismatch",
+  "hidden_before_embedding",
+  "hidden_after_output",
+  "output_before_embedding",
+  "add_input_arity",
+  "softmax_axis_invalid",
+  "classifier_output_unimplemented"
+]);
 
 export function App() {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromHash(window.location.hash));
@@ -163,6 +194,10 @@ export function App() {
   const decoderExportIssues = useMemo(
     () => validateGraph(normalizedExportGraph.ok ? normalizedExportGraph.value : graph, "decoder-training-valid"),
     [graph, normalizedExportGraph]
+  );
+  const universalExportIssues = useMemo(
+    () => validateGraph(graph, "decoder-training-valid").filter((issue) => UNIVERSAL_EXPORT_BLOCKING_CODES.has(issue.code)),
+    [graph]
   );
   const selectedNode = selected?.kind === "node" ? nodes.find((node) => node.id === selected.nodeId) ?? null : null;
 
@@ -281,6 +316,12 @@ export function App() {
   }
 
   const exportedPyTorch = useMemo<SafeExport<string>>(() => {
+    if (universalExportIssues.length > 0) {
+      return {
+        ok: false,
+        error: summarizeValidationIssues(universalExportIssues)
+      };
+    }
     if (!gpt2Ir.ok && !llamaIr.ok && !hybridIr.ok && (!normalizedExportGraph.ok || pytorchExportIssues.length > 0)) {
       return {
         ok: false,
@@ -305,10 +346,16 @@ export function App() {
         error: error instanceof Error ? error.message : "Unknown export error"
       };
     }
-  }, [graph, pytorchExportIssues, gpt2Ir, llamaIr, hybridIr, normalizedExportGraph]);
+  }, [graph, pytorchExportIssues, gpt2Ir, llamaIr, hybridIr, normalizedExportGraph, universalExportIssues]);
 
   const exportedJson = useMemo(() => JSON.stringify(graph, null, 2), [graph]);
   const exportedProject = useMemo<SafeExport<ReturnType<typeof exportProjectFiles>>>(() => {
+    if (universalExportIssues.length > 0) {
+      return {
+        ok: false,
+        error: summarizeValidationIssues(universalExportIssues)
+      };
+    }
     if (trainingWarnings.length > 0) {
       return { ok: false, error: trainingWarnings[0]! };
     }
@@ -332,7 +379,7 @@ export function App() {
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : "Unknown project export error" };
     }
-  }, [graph, trainingWarnings, decoderExportIssues, gpt2Ir, llamaIr, hybridIr, training, normalizedExportGraph]);
+  }, [graph, trainingWarnings, decoderExportIssues, gpt2Ir, llamaIr, hybridIr, training, normalizedExportGraph, universalExportIssues]);
 
   useEffect(() => {
     const template = resolveTemplate(modelTemplateSelection);
@@ -544,23 +591,44 @@ export function App() {
 
     const sourceDefinition = getBlockDefinition(sourceNode.type);
     const targetDefinition = getBlockDefinition(targetNode.type);
-    const compatible = sourceDefinition.outputs.some((shape) => targetDefinition.inputs.includes(shape));
-    if (!compatible) {
-      setConnectionError(`${sourceDefinition.label} cannot connect to ${targetDefinition.label}.`);
-      setPendingConnectionSourceId(null);
-      return;
-    }
-
     const alreadyExists = edges.some((edge) => edge.source === pendingConnectionSourceId && edge.target === targetNodeId);
     if (alreadyExists) {
       setConnectionError("That connection already exists.");
       setPendingConnectionSourceId(null);
       return;
     }
-    const nextEdges = [
-      ...edges,
-      { id: `edge-${crypto.randomUUID().slice(0, 8)}`, source: pendingConnectionSourceId, target: targetNodeId }
-    ];
+
+    const nextEdge = {
+      id: `edge-${crypto.randomUUID().slice(0, 8)}`,
+      source: pendingConnectionSourceId,
+      target: targetNodeId
+    };
+    const nextEdges = [...edges, nextEdge];
+    const tentativeGraph: ModelGraph = { nodes, edges: nextEdges, training };
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const inferredSequenceDims = inferSequenceDimensions(tentativeGraph);
+    const topologyIssues = validateTopology(tentativeGraph, "playground-valid");
+    const edgeIssues = validateEdge(tentativeGraph, nextEdge, inferredSequenceDims, nodeIds);
+    const configIssues = validateConfigCompatibility(tentativeGraph).filter(
+      (issue) => issue.edgeId === nextEdge.id || issue.nodeId === targetNode.id
+    );
+    const connectTimeIssues = [...topologyIssues, ...edgeIssues, ...configIssues];
+
+    if (connectTimeIssues.length > 0) {
+      const primaryIssue = connectTimeIssues[0]!;
+      let message = primaryIssue.message;
+
+      if (primaryIssue.code === "shape_mismatch") {
+        message = `${sourceDefinition.label} cannot connect to ${targetDefinition.label}.`;
+      } else if (primaryIssue.code === "graph_cycle") {
+        message = "That connection would create a cycle, which is not supported.";
+      }
+
+      setConnectionError(message);
+      setPendingConnectionSourceId(null);
+      return;
+    }
+
     setEdges(nextEdges);
     pushHistory(nodes, nextEdges);
     setConnectionError("");

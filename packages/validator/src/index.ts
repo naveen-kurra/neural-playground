@@ -57,7 +57,7 @@ export function validateGraph(graph: ModelGraph, mode: ValidationMode = "playgro
       });
     }
 
-    issues.push(...validateNodeConfig(node, inferredSequenceDims));
+    issues.push(...validateNodeConfig(node, inferredSequenceDims, mode));
   }
 
   return issues;
