@@ -20,7 +20,11 @@ export function validateTopology(graph: ModelGraph, mode: ValidationMode): Valid
   const inputNodes = graph.nodes.filter((node) => node.type === "Input");
   const outputNodes = graph.nodes.filter((node) => node.type === "Output");
   const embeddingNodes = graph.nodes.filter((node) =>
-    node.type === "Embedding" || node.type === "GPT2TokenEmbedding" || node.type === "LlamaTokenEmbedding"
+    node.type === "Embedding" ||
+    node.type === "GPT2TokenEmbedding" ||
+    node.type === "LlamaTokenEmbedding" ||
+    node.type === "Phi3TokenEmbedding" ||
+    node.type === "Gemma4TokenEmbedding"
   );
 
   if (inputNodes.length !== 1) {
@@ -221,7 +225,14 @@ function validateStageOrdering(nodes: ModelGraph["nodes"]): ValidationIssue[] {
 }
 
 function isEmbeddingStage(type: ModelGraph["nodes"][number]["type"]): boolean {
-  return type === "Embedding" || type === "GPT2TokenEmbedding" || type === "LlamaTokenEmbedding" || type === "GPT2PositionEmbedding";
+  return (
+    type === "Embedding" ||
+    type === "GPT2TokenEmbedding" ||
+    type === "LlamaTokenEmbedding" ||
+    type === "Phi3TokenEmbedding" ||
+    type === "Gemma4TokenEmbedding" ||
+    type === "GPT2PositionEmbedding"
+  );
 }
 
 function isHiddenStage(type: ModelGraph["nodes"][number]["type"]): boolean {
@@ -231,16 +242,27 @@ function isHiddenStage(type: ModelGraph["nodes"][number]["type"]): boolean {
     type === "TransformerBlock" ||
     type === "GPT2Block" ||
     type === "LlamaBlock" ||
+    type === "Phi3Block" ||
+    type === "Gemma4Block" ||
     type === "MoE" ||
     type === "MLP" ||
     type === "LayerNorm" ||
     type === "GPT2FinalLayerNorm" ||
-    type === "LlamaFinalRMSNorm"
+    type === "LlamaFinalRMSNorm" ||
+    type === "Phi3FinalRMSNorm" ||
+    type === "Gemma4FinalRMSNorm"
   );
 }
 
 function isOutputStage(type: ModelGraph["nodes"][number]["type"]): boolean {
-  return type === "GPT2LMHead" || type === "LlamaLMHead" || type === "Softmax" || type === "Output";
+  return (
+    type === "GPT2LMHead" ||
+    type === "LlamaLMHead" ||
+    type === "Phi3LMHead" ||
+    type === "Gemma4LMHead" ||
+    type === "Softmax" ||
+    type === "Output"
+  );
 }
 
 function hasCycle(graph: ModelGraph): boolean {

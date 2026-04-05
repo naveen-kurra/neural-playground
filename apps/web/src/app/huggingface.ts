@@ -2,7 +2,7 @@ export type HuggingFaceFetchResult = {
   modelId: string;
   config: Record<string, unknown>;
   weightIndex: Record<string, unknown> | null;
-  resolvedFamily: "gpt2" | "llama" | "unknown";
+  resolvedFamily: "gpt2" | "llama" | "phi3" | "unknown";
   inspection: HuggingFaceModelInspection;
 };
 
@@ -19,7 +19,16 @@ function normalizeModelId(modelId: string): string {
   return modelId.trim().replace(/^https?:\/\/huggingface\.co\//, "").replace(/\/+$/, "");
 }
 
-function inferFamily(config: Record<string, unknown>): "gpt2" | "llama" | "unknown" {
+function getNestedValue(data: Record<string, unknown>, path: string): unknown {
+  return path.split(".").reduce<unknown>((current, segment) => {
+    if (!current || typeof current !== "object" || Array.isArray(current) || !(segment in current)) {
+      return undefined;
+    }
+    return (current as Record<string, unknown>)[segment];
+  }, data);
+}
+
+function inferFamily(config: Record<string, unknown>): "gpt2" | "llama" | "phi3" | "unknown" {
   const modelType = String(config.model_type ?? "").toLowerCase();
   if (modelType === "gpt2") {
     return "gpt2";
@@ -27,14 +36,30 @@ function inferFamily(config: Record<string, unknown>): "gpt2" | "llama" | "unkno
   if (modelType === "llama") {
     return "llama";
   }
+  if (modelType === "phi3" || modelType === "phi-3") {
+    return "phi3";
+  }
+
+  const architectures = Array.isArray(config.architectures) ? config.architectures.map((value) => String(value).toLowerCase()) : [];
+  if (architectures.some((value) => value.includes("phi3") || value.includes("phi-3"))) {
+    return "phi3";
+  }
   return "unknown";
 }
 
 function getLayerCountHint(config: Record<string, unknown>): { value: number | null; key: string | null } {
-  const candidates = ["num_hidden_layers", "n_layer", "num_layers", "n_layers"];
+  const candidates = [
+    "num_hidden_layers",
+    "n_layer",
+    "num_layers",
+    "n_layers",
+    "text_config.num_hidden_layers",
+    "language_config.num_hidden_layers"
+  ];
   for (const key of candidates) {
-    if (typeof config[key] === "number" && Number.isFinite(config[key] as number)) {
-      return { value: Number(config[key]), key };
+    const value = getNestedValue(config, key);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return { value: Number(value), key };
     }
   }
 
@@ -125,7 +150,9 @@ async function fetchJson(url: string): Promise<Record<string, unknown>> {
   return data as Record<string, unknown>;
 }
 
-const DEFAULT_PRUNE_SERVICE_URL = import.meta.env.VITE_PRUNE_SERVICE_URL ?? "http://127.0.0.1:8787";
+const DEFAULT_PRUNE_SERVICE_URL =
+  (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_PRUNE_SERVICE_URL ??
+  "http://127.0.0.1:8787";
 
 export async function fetchHuggingFaceModelViaService(
   modelIdInput: string,

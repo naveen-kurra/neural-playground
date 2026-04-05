@@ -1,4 +1,4 @@
-export type ModelFamily = "gpt2" | "llama";
+export type ModelFamily = "gpt2" | "llama" | "phi3" | "gemma4";
 
 export type Modality = "text";
 
@@ -209,6 +209,24 @@ export type LlamaOperator =
   | LlamaFinalNormOp
   | LlamaLmHeadOp;
 
+export type Phi3EmbeddingOp = LlamaEmbeddingOp;
+export type Phi3AttentionOp = LlamaAttentionOp;
+export type Phi3MlpOp = LlamaMlpOp;
+export type Phi3RmsNormOp = LlamaRmsNormOp;
+export type Phi3BlockOp = LlamaBlockOp;
+export type Phi3FinalNormOp = LlamaFinalNormOp;
+export type Phi3LmHeadOp = LlamaLmHeadOp;
+export type Phi3Operator = LlamaOperator;
+
+export type Gemma4EmbeddingOp = LlamaEmbeddingOp;
+export type Gemma4AttentionOp = LlamaAttentionOp;
+export type Gemma4MlpOp = LlamaMlpOp;
+export type Gemma4RmsNormOp = LlamaRmsNormOp;
+export type Gemma4BlockOp = LlamaBlockOp;
+export type Gemma4FinalNormOp = LlamaFinalNormOp;
+export type Gemma4LmHeadOp = LlamaLmHeadOp;
+export type Gemma4Operator = LlamaOperator;
+
 export type HybridEmbeddingOp =
   | {
       family: "gpt2";
@@ -224,6 +242,16 @@ export type HybridEmbeddingOp =
     }
   | {
       family: "llama";
+      kind: "hybrid_embeddings";
+      id: string;
+      input: string;
+      output: string;
+      vocabSize: number;
+      hiddenSize: number;
+      tieWordEmbeddings: boolean;
+    }
+  | {
+      family: "phi3";
       kind: "hybrid_embeddings";
       id: string;
       input: string;
@@ -276,6 +304,28 @@ export type HybridBlockOp =
       attentionBias: boolean;
       attentionDropout: number;
       mlpBias: boolean;
+    }
+  | {
+      family: "phi3";
+      kind: "hybrid_block";
+      id: string;
+      input: string;
+      output: string;
+      hiddenSize: number;
+      intermediateSize: number;
+      numHeads: number;
+      numKeyValueHeads: number;
+      headDim: number;
+      rmsNormEpsilon: number;
+      ropeTheta: number;
+      activation: string;
+      feedforwardType: "mlp" | "moe";
+      numExperts: number;
+      topK: number;
+      expertHidden: number;
+      attentionBias: boolean;
+      attentionDropout: number;
+      mlpBias: boolean;
     };
 
 export type HybridFinalNormOp =
@@ -290,6 +340,15 @@ export type HybridFinalNormOp =
     }
   | {
       family: "llama";
+      kind: "hybrid_final_norm";
+      id: string;
+      input: string;
+      output: string;
+      hiddenSize: number;
+      epsilon: number;
+    }
+  | {
+      family: "phi3";
       kind: "hybrid_final_norm";
       id: string;
       input: string;
@@ -311,6 +370,16 @@ export type HybridLmHeadOp =
     }
   | {
       family: "llama";
+      kind: "hybrid_lm_head";
+      id: string;
+      input: string;
+      output: string;
+      hiddenSize: number;
+      vocabSize: number;
+      tiedToEmbedding: string;
+    }
+  | {
+      family: "phi3";
       kind: "hybrid_lm_head";
       id: string;
       input: string;
@@ -388,6 +457,81 @@ export type LlamaArchitectureSpec = {
   operators: LlamaOperator[];
 };
 
+export type Phi3ArchitectureSpec = {
+  family: "phi3";
+  modality: "text";
+  task: "causal_lm";
+  name: string;
+  source?: {
+    kind: "manual" | "huggingface-config";
+    modelId?: string;
+  };
+  config: {
+    vocabSize: number;
+    hiddenSize: number;
+    intermediateSize: number;
+    numHiddenLayers: number;
+    numAttentionHeads: number;
+    numKeyValueHeads: number;
+    headDim: number;
+    hiddenActivation: string;
+    maxPositionEmbeddings: number;
+    rmsNormEpsilon: number;
+    ropeTheta: number;
+    attentionBias: boolean;
+    attentionDropout: number;
+    mlpBias: boolean;
+    tieWordEmbeddings: boolean;
+  };
+  tensors: {
+    inputTokens: TensorRef;
+    hiddenStates: TensorRef[];
+    logits: TensorRef;
+  };
+  operators: Phi3Operator[];
+};
+
+export type Gemma4ArchitectureSpec = {
+  family: "gemma4";
+  modality: "text";
+  task: "causal_lm";
+  name: string;
+  source?: {
+    kind: "manual" | "huggingface-config";
+    modelId?: string;
+  };
+  config: {
+    vocabSize: number;
+    hiddenSize: number;
+    intermediateSize: number;
+    numHiddenLayers: number;
+    numAttentionHeads: number;
+    numKeyValueHeads: number;
+    headDim: number;
+    hiddenActivation: string;
+    maxPositionEmbeddings: number;
+    rmsNormEpsilon: number;
+    ropeTheta: number;
+    attentionBias: boolean;
+    attentionDropout: number;
+    mlpBias: boolean;
+    tieWordEmbeddings: boolean;
+    slidingWindow: number;
+    layerTypes: string[];
+    ropeParameters: Record<string, { ropeType: string; ropeTheta: number }>;
+    numGlobalKeyValueHeads: number | null;
+    globalHeadDim: number;
+    attentionKEqV: boolean;
+    numKvSharedLayers: number;
+  };
+  tensors: {
+    inputTokens: TensorRef;
+    hiddenStates: TensorRef[];
+    logits: TensorRef;
+  };
+  operators: Gemma4Operator[];
+};
+
 export type HybridDecoderArchitectureSpec = {
   family: "hybrid_decoder";
   modality: "text";
@@ -401,9 +545,9 @@ export type HybridDecoderArchitectureSpec = {
     hiddenSize: number;
     maxPositionEmbeddings: number;
     tieWordEmbeddings: boolean;
-    embeddingFamily: "gpt2" | "llama";
-    finalNormFamily: "gpt2" | "llama";
-    blockFamilies: Array<"gpt2" | "llama">;
+    embeddingFamily: "gpt2" | "llama" | "phi3";
+    finalNormFamily: "gpt2" | "llama" | "phi3";
+    blockFamilies: Array<"gpt2" | "llama" | "phi3">;
   };
   tensors: {
     inputTokens: TensorRef;
@@ -418,4 +562,4 @@ export type HybridDecoderArchitectureSpec = {
   };
 };
 
-export type ArchitectureSpec = GPT2ArchitectureSpec | LlamaArchitectureSpec | HybridDecoderArchitectureSpec;
+export type ArchitectureSpec = GPT2ArchitectureSpec | LlamaArchitectureSpec | Phi3ArchitectureSpec | Gemma4ArchitectureSpec | HybridDecoderArchitectureSpec;

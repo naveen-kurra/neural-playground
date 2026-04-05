@@ -1,21 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { getBlockDefinition, type BlockEdge, type BlockField, type BlockNode, type ModelGraph } from "@neural-playground/block-schema";
 import {
+  exportGemma4IrProjectFiles,
+  exportGemma4IrToPyTorch,
   exportGPT2IrProjectFiles,
   exportGPT2IrToPyTorch,
   exportHybridIrProjectFiles,
   exportHybridIrToPyTorch,
   exportLlamaIrProjectFiles,
   exportLlamaIrToPyTorch,
+  exportPhi3IrProjectFiles,
+  exportPhi3IrToPyTorch,
   exportModelGraphToPyTorch,
   exportProjectFiles
 } from "@neural-playground/exporter-pytorch";
 import {
+  buildGemma4ArchitectureSpec,
   buildGPT2ArchitectureSpec,
   buildLlamaArchitectureSpec,
+  buildPhi3ArchitectureSpec,
+  mapModelGraphToGemma4Ir,
   mapModelGraphToGPT2Ir,
   mapModelGraphToHybridIr,
   mapModelGraphToLlamaIr,
+  mapModelGraphToPhi3Ir,
+  projectGemma4IrToModelGraph,
+  projectPhi3IrToModelGraph,
   projectGPT2IrToModelGraph,
   projectLlamaIrToModelGraph
 } from "@neural-playground/ir-schema";
@@ -239,11 +249,27 @@ export function App() {
     }
   }, [graph]);
 
+  const phi3Ir = useMemo(() => {
+    try {
+      return { ok: true as const, value: mapModelGraphToPhi3Ir(graph) };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "Unknown Phi-3 mapping error" };
+    }
+  }, [graph]);
+
+  const gemma4Ir = useMemo(() => {
+    try {
+      return { ok: true as const, value: mapModelGraphToGemma4Ir(graph) };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "Unknown Gemma 4 mapping error" };
+    }
+  }, [graph]);
+
   // Merge export-level validation only when no specialized IR can handle the graph.
   // Specialized IRs (GPT-2, LLaMA, Hybrid) have their own embedding/topology rules
   // so generic "pytorch-export-valid" checks would produce false positives on them.
   const displayIssues = useMemo(() => {
-    if (gpt2Ir.ok || llamaIr.ok || hybridIr.ok) return issues;
+    if (gpt2Ir.ok || llamaIr.ok || phi3Ir.ok || gemma4Ir.ok || hybridIr.ok) return issues;
     const exportLevel = validateGraph(graph, "pytorch-export-valid");
     const seen = new Set<string>();
     const merged = [];
@@ -252,7 +278,7 @@ export function App() {
       if (!seen.has(key)) { seen.add(key); merged.push(issue); }
     }
     return merged;
-  }, [graph, issues, gpt2Ir.ok, llamaIr.ok, hybridIr.ok]);
+  }, [graph, issues, gpt2Ir.ok, llamaIr.ok, phi3Ir.ok, gemma4Ir.ok, hybridIr.ok]);
 
   const formattedIssues = useMemo(() => displayIssues.map((i) => ({ raw: i, fmt: formatValidationIssue(i) })), [displayIssues]);
   const errorCount = formattedIssues.filter((i) => i.fmt.severity === "error").length;
@@ -322,7 +348,7 @@ export function App() {
         error: summarizeValidationIssues(universalExportIssues)
       };
     }
-    if (!gpt2Ir.ok && !llamaIr.ok && !hybridIr.ok && (!normalizedExportGraph.ok || pytorchExportIssues.length > 0)) {
+    if (!gpt2Ir.ok && !llamaIr.ok && !phi3Ir.ok && !gemma4Ir.ok && !hybridIr.ok && (!normalizedExportGraph.ok || pytorchExportIssues.length > 0)) {
       return {
         ok: false,
         error: normalizedExportGraph.ok ? summarizeValidationIssues(pytorchExportIssues) : normalizedExportGraph.error
@@ -336,6 +362,12 @@ export function App() {
       if (llamaIr.ok) {
         return { ok: true, value: exportLlamaIrToPyTorch(llamaIr.value) };
       }
+      if (phi3Ir.ok) {
+        return { ok: true, value: exportPhi3IrToPyTorch(phi3Ir.value) };
+      }
+      if (gemma4Ir.ok) {
+        return { ok: true, value: exportGemma4IrToPyTorch(gemma4Ir.value) };
+      }
       if (hybridIr.ok) {
         return { ok: true, value: exportHybridIrToPyTorch(hybridIr.value) };
       }
@@ -346,7 +378,7 @@ export function App() {
         error: error instanceof Error ? error.message : "Unknown export error"
       };
     }
-  }, [graph, pytorchExportIssues, gpt2Ir, llamaIr, hybridIr, normalizedExportGraph, universalExportIssues]);
+  }, [graph, pytorchExportIssues, gpt2Ir, llamaIr, phi3Ir, gemma4Ir, hybridIr, normalizedExportGraph, universalExportIssues]);
 
   const exportedJson = useMemo(() => JSON.stringify(graph, null, 2), [graph]);
   const exportedProject = useMemo<SafeExport<ReturnType<typeof exportProjectFiles>>>(() => {
@@ -359,7 +391,7 @@ export function App() {
     if (trainingWarnings.length > 0) {
       return { ok: false, error: trainingWarnings[0]! };
     }
-    if (!gpt2Ir.ok && !llamaIr.ok && !hybridIr.ok && (!normalizedExportGraph.ok || decoderExportIssues.length > 0)) {
+    if (!gpt2Ir.ok && !llamaIr.ok && !phi3Ir.ok && !gemma4Ir.ok && !hybridIr.ok && (!normalizedExportGraph.ok || decoderExportIssues.length > 0)) {
       return {
         ok: false,
         error: normalizedExportGraph.ok ? summarizeValidationIssues(decoderExportIssues) : normalizedExportGraph.error
@@ -372,6 +404,12 @@ export function App() {
       if (llamaIr.ok) {
         return { ok: true, value: exportLlamaIrProjectFiles(llamaIr.value, training) };
       }
+      if (phi3Ir.ok) {
+        return { ok: true, value: exportPhi3IrProjectFiles(phi3Ir.value, training) };
+      }
+      if (gemma4Ir.ok) {
+        return { ok: true, value: exportGemma4IrProjectFiles(gemma4Ir.value, training) };
+      }
       if (hybridIr.ok) {
         return { ok: true, value: exportHybridIrProjectFiles(hybridIr.value, training) };
       }
@@ -379,7 +417,7 @@ export function App() {
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : "Unknown project export error" };
     }
-  }, [graph, trainingWarnings, decoderExportIssues, gpt2Ir, llamaIr, hybridIr, training, normalizedExportGraph, universalExportIssues]);
+  }, [graph, trainingWarnings, decoderExportIssues, gpt2Ir, llamaIr, phi3Ir, gemma4Ir, hybridIr, training, normalizedExportGraph, universalExportIssues]);
 
   useEffect(() => {
     const template = resolveTemplate(modelTemplateSelection);
@@ -507,7 +545,13 @@ export function App() {
         const spec = buildGPT2ArchitectureSpec({
           name: `${template.label} ${blockCount}-block`,
           modelId: template.modelId,
-          numHiddenLayers: blockCount
+          numHiddenLayers: blockCount,
+          vocabSize: template.overrides?.vocabSize,
+          maxPositionEmbeddings: template.overrides?.maxPositionEmbeddings,
+          hiddenSize: template.overrides?.hiddenSize,
+          numAttentionHeads: template.overrides?.numAttentionHeads,
+          intermediateSize: template.overrides?.intermediateSize,
+          tieWordEmbeddings: template.overrides?.tieWordEmbeddings
         });
         const importedGraph = projectGPT2IrToModelGraph(spec);
         setNodes(importedGraph.nodes);
@@ -529,9 +573,90 @@ export function App() {
         const spec = buildLlamaArchitectureSpec({
           name: `${template.label} ${blockCount}-block`,
           modelId: template.modelId,
-          numHiddenLayers: blockCount
+          numHiddenLayers: blockCount,
+          vocabSize: template.overrides?.vocabSize,
+          hiddenSize: template.overrides?.hiddenSize,
+          intermediateSize: template.overrides?.intermediateSize,
+          numAttentionHeads: template.overrides?.numAttentionHeads,
+          numKeyValueHeads: template.overrides?.numKeyValueHeads,
+          headDim: template.overrides?.headDim,
+          maxPositionEmbeddings: template.overrides?.maxPositionEmbeddings,
+          rmsNormEpsilon: template.overrides?.rmsNormEpsilon,
+          ropeTheta: template.overrides?.ropeTheta,
+          tieWordEmbeddings: template.overrides?.tieWordEmbeddings
         });
         const importedGraph = projectLlamaIrToModelGraph(spec);
+        setNodes(importedGraph.nodes);
+        setEdges(importedGraph.edges);
+        setTraining(importedGraph.training);
+        historyRef.current = [{ nodes: importedGraph.nodes, edges: importedGraph.edges, training: importedGraph.training }];
+        historyPosRef.current = 0;
+        setHistoryPos(0);
+        setSelected({ kind: "training" });
+        setPendingConnectionSourceId(null);
+        setConnectionError("");
+        setExportPreview(null);
+        setCopyStatus("idle");
+        setProjectStatus(`Loaded ${template.label} template with ${blockCount} block${blockCount === 1 ? "" : "s"}.`);
+        return;
+      }
+
+      if (template.family === "phi3") {
+        const spec = buildPhi3ArchitectureSpec({
+          name: `${template.label} ${blockCount}-block`,
+          modelId: template.modelId,
+          numHiddenLayers: blockCount,
+          vocabSize: template.overrides?.vocabSize,
+          hiddenSize: template.overrides?.hiddenSize,
+          intermediateSize: template.overrides?.intermediateSize,
+          numAttentionHeads: template.overrides?.numAttentionHeads,
+          numKeyValueHeads: template.overrides?.numKeyValueHeads,
+          headDim: template.overrides?.headDim,
+          maxPositionEmbeddings: template.overrides?.maxPositionEmbeddings,
+          rmsNormEpsilon: template.overrides?.rmsNormEpsilon,
+          ropeTheta: template.overrides?.ropeTheta,
+          tieWordEmbeddings: template.overrides?.tieWordEmbeddings
+        });
+        const importedGraph = projectPhi3IrToModelGraph(spec);
+        setNodes(importedGraph.nodes);
+        setEdges(importedGraph.edges);
+        setTraining(importedGraph.training);
+        historyRef.current = [{ nodes: importedGraph.nodes, edges: importedGraph.edges, training: importedGraph.training }];
+        historyPosRef.current = 0;
+        setHistoryPos(0);
+        setSelected({ kind: "training" });
+        setPendingConnectionSourceId(null);
+        setConnectionError("");
+        setExportPreview(null);
+        setCopyStatus("idle");
+        setProjectStatus(`Loaded ${template.label} template with ${blockCount} block${blockCount === 1 ? "" : "s"}.`);
+        return;
+      }
+
+      if (template.family === "gemma4") {
+        const spec = buildGemma4ArchitectureSpec({
+          name: `${template.label} ${blockCount}-block`,
+          modelId: template.modelId,
+          numHiddenLayers: blockCount,
+          vocabSize: template.overrides?.vocabSize,
+          hiddenSize: template.overrides?.hiddenSize,
+          intermediateSize: template.overrides?.intermediateSize,
+          numAttentionHeads: template.overrides?.numAttentionHeads,
+          numKeyValueHeads: template.overrides?.numKeyValueHeads,
+          headDim: template.overrides?.headDim,
+          maxPositionEmbeddings: template.overrides?.maxPositionEmbeddings,
+          rmsNormEpsilon: template.overrides?.rmsNormEpsilon,
+          ropeTheta: template.overrides?.ropeTheta,
+          tieWordEmbeddings: template.overrides?.tieWordEmbeddings,
+          slidingWindow: template.overrides?.slidingWindow,
+          layerTypes: template.overrides?.layerTypes,
+          ropeParameters: template.overrides?.ropeParameters,
+          numGlobalKeyValueHeads: template.overrides?.numGlobalKeyValueHeads,
+          globalHeadDim: template.overrides?.globalHeadDim,
+          attentionKEqV: template.overrides?.attentionKEqV,
+          numKvSharedLayers: template.overrides?.numKvSharedLayers
+        });
+        const importedGraph = projectGemma4IrToModelGraph(spec);
         setNodes(importedGraph.nodes);
         setEdges(importedGraph.edges);
         setTraining(importedGraph.training);

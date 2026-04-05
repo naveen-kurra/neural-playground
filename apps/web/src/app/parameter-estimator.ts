@@ -1,11 +1,15 @@
 import type { BlockNode, ModelGraph } from "@neural-playground/block-schema";
 import {
+  mapModelGraphToGemma4Ir,
   mapModelGraphToGPT2Ir,
   mapModelGraphToHybridIr,
   mapModelGraphToLlamaIr,
+  mapModelGraphToPhi3Ir,
+  type Gemma4ArchitectureSpec,
   type GPT2ArchitectureSpec,
   type HybridDecoderArchitectureSpec,
-  type LlamaArchitectureSpec
+  type LlamaArchitectureSpec,
+  type Phi3ArchitectureSpec
 } from "@neural-playground/ir-schema";
 import {
   countEmbedding,
@@ -77,6 +81,14 @@ export function estimateParameterCount(graph: ModelGraph): number {
   } catch {}
 
   try {
+    return estimatePhi3SpecParameters(mapModelGraphToPhi3Ir(graph));
+  } catch {}
+
+  try {
+    return estimateGemma4SpecParameters(mapModelGraphToGemma4Ir(graph));
+  } catch {}
+
+  try {
     return estimateHybridSpecParameters(mapModelGraphToHybridIr(graph));
   } catch {}
 
@@ -94,7 +106,9 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
     switch (node.type) {
       case "Embedding":
       case "GPT2TokenEmbedding":
-      case "LlamaTokenEmbedding": {
+      case "LlamaTokenEmbedding":
+      case "Phi3TokenEmbedding":
+      case "Gemma4TokenEmbedding": {
         vocabSize = num(node.config.vocabSize, vocabSize);
         hiddenSize = num(node.config.embeddingDim, hiddenSize);
         parameterCount += countEmbedding(vocabSize, hiddenSize);
@@ -136,13 +150,15 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
         hiddenSize = dModel;
         break;
       }
-      case "LlamaBlock": {
+      case "LlamaBlock":
+      case "Phi3Block":
+      case "Gemma4Block": {
         const dModel = num(node.config.dModel, hiddenSize);
         const numHeads = num(node.config.numHeads, 32);
         const numKvHeads = num(node.config.numKeyValueHeads, numHeads);
         const headDim = num(node.config.headDim, Math.floor(dModel / Math.max(1, numHeads)));
         const feedforwardType = String(node.config.feedforwardType ?? "mlp");
-        const ffnHidden = num(node.config.ffnHidden, dModel * 4);
+        const ffnHidden = num(node.config.ffnHidden, node.type === "Phi3Block" ? 8192 : node.type === "Gemma4Block" ? 21504 : dModel * 4);
         parameterCount += countLlamaAttention(dModel, numHeads, numKvHeads, headDim, Boolean(node.config.attentionBias ?? false));
         if (feedforwardType === "moe") {
           const expertHidden = num(node.config.expertHidden, ffnHidden);
@@ -163,13 +179,17 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
       }
       case "LayerNorm":
       case "GPT2FinalLayerNorm":
-      case "LlamaFinalRMSNorm": {
+      case "LlamaFinalRMSNorm":
+      case "Phi3FinalRMSNorm":
+      case "Gemma4FinalRMSNorm": {
         parameterCount += 2 * hiddenSize;
         finalNormAccounted = true;
         break;
       }
       case "GPT2LMHead":
-      case "LlamaLMHead": {
+      case "LlamaLMHead":
+      case "Phi3LMHead":
+      case "Gemma4LMHead": {
         const tiedWeights = Boolean(node.config.tiedWeights ?? false);
         const lmVocabSize = num(node.config.vocabSize, vocabSize);
         if (!tiedWeights) {
@@ -229,6 +249,44 @@ function estimateLlamaSpecParameters(spec: LlamaArchitectureSpec): number {
   const lmHead = spec.config.tieWordEmbeddings ? 0 : d * vocab;
 
   return tokenEmbedding + layers * (attention + mlp + norms) + finalNorm + lmHead;
+}
+
+function estimatePhi3SpecParameters(spec: Phi3ArchitectureSpec): number {
+  const d = spec.config.hiddenSize;
+  const vocab = spec.config.vocabSize;
+  const layers = spec.config.numHiddenLayers;
+  const ffn = spec.config.intermediateSize;
+  const heads = spec.config.numAttentionHeads;
+  const kvHeads = spec.config.numKeyValueHeads;
+  const headDim = spec.config.headDim;
+
+  const tokenEmbedding = countEmbedding(vocab, d);
+  const attention = countLlamaAttention(d, heads, kvHeads, headDim, spec.config.attentionBias);
+  const mlp = countLlamaMlp(d, ffn, spec.config.mlpBias);
+  const norms = countLayerNorm(d, false) * 2;
+  const finalNorm = countLayerNorm(d, false);
+  const lmHead = spec.config.tieWordEmbeddings ? 0 : d * vocab;
+
+  return tokenEmbedding + layers * (attention + mlp + norms) + finalNorm + lmHead;
+}
+
+function estimateGemma4SpecParameters(spec: Gemma4ArchitectureSpec): number {
+  const d = spec.config.hiddenSize;
+  const vocab = spec.config.vocabSize;
+  const layers = spec.config.numHiddenLayers;
+  const attention = countLlamaAttention(
+    d,
+    spec.config.numAttentionHeads,
+    spec.config.numKeyValueHeads,
+    spec.config.headDim,
+    spec.config.attentionBias
+  );
+  const mlp = countLlamaMlp(d, spec.config.intermediateSize, spec.config.mlpBias);
+  const norms = countLayerNorm(d, false) * 2;
+  const finalNorm = countLayerNorm(d, false);
+  const lmHead = spec.config.tieWordEmbeddings ? 0 : d * vocab;
+
+  return countEmbedding(vocab, d) + layers * (attention + mlp + norms) + finalNorm + lmHead;
 }
 
 function estimateHybridSpecParameters(spec: HybridDecoderArchitectureSpec): number {

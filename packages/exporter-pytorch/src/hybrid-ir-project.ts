@@ -25,7 +25,7 @@ function exportHybridModelYaml(spec: HybridDecoderArchitectureSpec): string {
     activation_function: ${block.activation}
     attn_pdrop: ${block.attnDropout}
     resid_pdrop: ${block.residDropout}`
-        : `  - family: llama
+        : `  - family: ${block.family}
     hidden_size: ${block.hiddenSize}
     intermediate_size: ${block.intermediateSize}
     num_attention_heads: ${block.numHeads}

@@ -72,7 +72,7 @@ export function normalizeGraphForGenericExport(graph: ModelGraph): SafeGraph {
         continue;
       }
 
-      if (node.type === "Embedding" || node.type === "GPT2TokenEmbedding" || node.type === "LlamaTokenEmbedding") {
+      if (node.type === "Embedding" || node.type === "GPT2TokenEmbedding" || node.type === "LlamaTokenEmbedding" || node.type === "Phi3TokenEmbedding" || node.type === "Gemma4TokenEmbedding") {
         if (embeddingAdded) {
           continue;
         }
@@ -112,13 +112,13 @@ export function normalizeGraphForGenericExport(graph: ModelGraph): SafeGraph {
         continue;
       }
 
-      if (node.type === "LlamaBlock") {
+      if (node.type === "LlamaBlock" || node.type === "Phi3Block" || node.type === "Gemma4Block") {
         normalizedNodes.push(
           makeNode("TransformerBlock", index++, {
-            dModel: Number(node.config.dModel ?? 4096),
+            dModel: Number(node.config.dModel ?? (node.type === "Phi3Block" ? 3072 : node.type === "Gemma4Block" ? 5376 : 4096)),
             numHeads: Number(node.config.numHeads ?? 32),
-            ffnHidden: Number(node.config.ffnHidden ?? 11008),
-            activation: "SiLU",
+            ffnHidden: Number(node.config.ffnHidden ?? (node.type === "Phi3Block" ? 8192 : node.type === "Gemma4Block" ? 21504 : 11008)),
+            activation: node.type === "Gemma4Block" ? "GELU" : "SiLU",
             dropout: Number(node.config.dropout ?? 0)
           })
         );
@@ -147,7 +147,7 @@ export function normalizeGraphForGenericExport(graph: ModelGraph): SafeGraph {
         continue;
       }
 
-      if (node.type === "LayerNorm" || node.type === "GPT2FinalLayerNorm" || node.type === "LlamaFinalRMSNorm") {
+      if (node.type === "LayerNorm" || node.type === "GPT2FinalLayerNorm" || node.type === "LlamaFinalRMSNorm" || node.type === "Phi3FinalRMSNorm" || node.type === "Gemma4FinalRMSNorm") {
         normalizedNodes.push(
           makeNode("LayerNorm", index++, {
             epsilon: Number(node.config.epsilon ?? 0.00001)
@@ -165,7 +165,7 @@ export function normalizeGraphForGenericExport(graph: ModelGraph): SafeGraph {
         continue;
       }
 
-      if (node.type === "GPT2LMHead" || node.type === "LlamaLMHead") {
+      if (node.type === "GPT2LMHead" || node.type === "LlamaLMHead" || node.type === "Phi3LMHead" || node.type === "Gemma4LMHead") {
         continue;
       }
 

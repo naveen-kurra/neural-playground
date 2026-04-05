@@ -5,7 +5,7 @@ export function renderNewGeluActivation(): string {
 `;
 }
 
-export function renderActivationRegistry(kind: "gpt2" | "llama", fnName = "get_activation"): string {
+export function renderActivationRegistry(kind: "gpt2" | "llama" | "phi3", fnName = "get_activation"): string {
   if (kind === "gpt2") {
     return `def ${fnName}(name: str) -> nn.Module:
     key = name.lower().strip()
@@ -401,4 +401,3 @@ ${configType === "LlamaConfig" ? "        position_ids: torch.Tensor,\n" : ""}  
         return hidden_states
 `;
 }
-

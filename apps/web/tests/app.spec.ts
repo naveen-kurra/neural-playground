@@ -77,7 +77,7 @@ test("pruning page can inspect a mocked Hugging Face model and return to builder
         ok: true,
         result: {
           modelId: "microsoft/Phi-3-mini-4k-instruct",
-          resolvedFamily: "unknown",
+          resolvedFamily: "phi3",
           config: {
             model_type: "phi3",
             num_hidden_layers: 32,
@@ -113,6 +113,7 @@ test("pruning page can inspect a mocked Hugging Face model and return to builder
 
   await expect(page.getByText("Resolved Model")).toBeVisible();
   await expect(page.getByText("microsoft/Phi-3-mini-4k-instruct")).toBeVisible();
+  await expect(page.getByText("phi3", { exact: true })).toBeVisible();
   await expect(page.locator(".prune-badge").getByText("Likely supported")).toBeVisible();
   await expect(page.getByText("model.layers.", { exact: true })).toBeVisible();
   await expect(page.getByText("Transformer block stack detected")).toBeVisible();
@@ -138,7 +139,7 @@ test("pruning presets update the block pruning summary", async ({ page }) => {
         ok: true,
         result: {
           modelId: "microsoft/Phi-3-mini-4k-instruct",
-          resolvedFamily: "unknown",
+          resolvedFamily: "phi3",
           config: {
             model_type: "phi3",
             num_hidden_layers: 8,

@@ -1,7 +1,11 @@
 export * from "./types";
 export * from "./gpt2";
 export * from "./llama";
+export * from "./phi3";
+export * from "./gemma4";
 export * from "./mappers";
 export * as gpt2Family from "./families/gpt2";
 export * as llamaFamily from "./families/llama";
+export * as phi3Family from "./families/phi3";
+export * as gemma4Family from "./families/gemma4";
 export * as hybridFamily from "./families/hybrid";

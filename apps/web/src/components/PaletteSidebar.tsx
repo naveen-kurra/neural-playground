@@ -109,7 +109,7 @@ export function PaletteSidebar(props: PaletteSidebarProps) {
                 type="text"
                 list="model-template-options"
                 value={modelTemplateSelection}
-                placeholder="Search GPT-2 or LLaMA"
+            placeholder="Search GPT-2, LLaMA, Phi-3, or Gemma 4"
                 onChange={(event) => onModelTemplateSelectionChange(event.target.value)}
               />
             </label>

@@ -25,7 +25,7 @@ function renderBlockInit(block: HybridBlockOp): string {
             ))`;
   }
 
-  return `            LlamaDecoderLayer(HybridLlamaBlockConfig(
+  return `            ${block.family === "phi3" ? "Phi3DecoderLayer" : "LlamaDecoderLayer"}(HybridLlamaBlockConfig(
                 hidden_size=${block.hiddenSize},
                 intermediate_size=${block.intermediateSize},
                 num_attention_heads=${block.numHeads},
@@ -68,7 +68,7 @@ class HybridGPT2BlockConfig:
 `);
   }
 
-  if (spec.operators.blocks.some((block) => block.family === "llama")) {
+  if (spec.operators.blocks.some((block) => block.family === "llama" || block.family === "phi3")) {
     sections.push(`@dataclass(frozen=True)
 class HybridLlamaBlockConfig:
     hidden_size: int
@@ -89,8 +89,18 @@ class HybridLlamaBlockConfig:
 `);
   }
 
-  const maxLlamaHeadDim = Math.max(1, ...spec.operators.blocks.filter((b) => b.family === "llama").map((b) => b.headDim ?? 1), 1);
-  const maxRopeTheta = Math.max(10000, ...spec.operators.blocks.filter((b) => b.family === "llama").map((b) => b.ropeTheta ?? 10000), 10000);
+  const maxLlamaHeadDim = Math.max(
+    1,
+    ...spec.operators.blocks.filter((b) => b.family === "llama" || b.family === "phi3").map((b) => b.headDim ?? 1),
+    1
+  );
+  const maxRopeTheta = Math.max(
+    10000,
+    ...spec.operators.blocks
+      .filter((b) => b.family === "llama" || b.family === "phi3")
+      .map((b) => b.ropeTheta ?? 10000),
+    10000
+  );
 
   sections.push(`@dataclass(frozen=True)
 class HybridConfig:
@@ -113,7 +123,7 @@ function renderEmbeddingInit(spec: HybridDecoderArchitectureSpec): string {
         self.wte = nn.Embedding(config.vocab_size, config.hidden_size)
         self.wpe = nn.Embedding(config.max_position_embeddings, config.hidden_size)
         self.drop = nn.Dropout(config.embd_pdrop)`
-    : `        self.embedding_type = "llama"
+    : `        self.embedding_type = "${spec.operators.embedding.family}"
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)`;
 }
 
@@ -128,17 +138,20 @@ function renderEmbeddingForward(spec: HybridDecoderArchitectureSpec): string {
 function renderFinalNormInit(spec: HybridDecoderArchitectureSpec): string {
   return spec.operators.finalNorm.family === "gpt2"
     ? `        self.final_norm = nn.LayerNorm(config.hidden_size, eps=config.final_norm_epsilon)`
-    : `        self.final_norm = LlamaRMSNorm(config.hidden_size, eps=config.final_norm_epsilon)`;
+    : `        self.final_norm = ${spec.operators.finalNorm.family === "phi3" ? "Phi3RMSNorm" : "LlamaRMSNorm"}(config.hidden_size, eps=config.final_norm_epsilon)`;
 }
 
 function renderRotaryInit(spec: HybridDecoderArchitectureSpec): string {
-  return spec.operators.blocks.some((block) => block.family === "llama")
-    ? `        self.rotary_emb = LlamaRotaryEmbedding(config.max_llama_head_dim, base=config.max_rope_theta)`
+  const needsRotary = spec.operators.blocks.some((block) => block.family === "llama" || block.family === "phi3");
+  const rotaryClass = spec.operators.blocks.some((block) => block.family === "phi3") ? "Phi3RotaryEmbedding" : "LlamaRotaryEmbedding";
+  return needsRotary
+    ? `        self.rotary_emb = ${rotaryClass}(config.max_llama_head_dim, base=config.max_rope_theta)`
     : "";
 }
 
 function renderBlockForward(spec: HybridDecoderArchitectureSpec): string {
-  if (!spec.operators.blocks.some((block) => block.family === "llama")) {
+  const hasRotaryBlocks = spec.operators.blocks.some((block) => block.family === "llama" || block.family === "phi3");
+  if (!hasRotaryBlocks) {
     return `        for block in self.blocks:
             hidden_states = block(hidden_states)`;
   }
