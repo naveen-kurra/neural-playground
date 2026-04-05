@@ -14,24 +14,30 @@ import {
   exportHybridIrToPyTorch,
   exportLlamaIrProjectFiles,
   exportLlamaIrToPyTorch,
+  exportMistralIrProjectFiles,
+  exportMistralIrToPyTorch,
   exportPhi3IrProjectFiles,
   exportPhi3IrToPyTorch,
   exportProjectFiles
 } from "@neural-playground/exporter-pytorch";
 import {
   buildGemma4ArchitectureSpec,
+  buildMistralArchitectureSpec,
   mapGPT2ConfigToIr,
   mapGemma4ConfigToIr,
   mapLlamaConfigToIr,
+  mapMistralConfigToIr,
   mapPhi3ConfigToIr,
   buildPhi3ArchitectureSpec,
   mapModelGraphToGemma4Ir,
   mapModelGraphToPhi3Ir,
   projectGemma4IrToModelGraph,
+  projectMistralIrToModelGraph,
   projectPhi3IrToModelGraph,
   mapModelGraphToGPT2Ir,
   mapModelGraphToHybridIr,
-  mapModelGraphToLlamaIr
+  mapModelGraphToLlamaIr,
+  mapModelGraphToMistralIr
 } from "@neural-playground/ir-schema";
 import { validateGraph } from "@neural-playground/validator";
 
@@ -1120,6 +1126,76 @@ function testGemma4TemplateUsesDedicatedFamilyDefaults(): void {
   assert.equal(gemmaBlocks[0]?.config.numKvSharedLayers, 0);
 }
 
+function testMistralTemplateUsesDedicatedFamilyDefaults(): void {
+  const template = resolveTemplate("mistralai/Mistral-7B-Instruct-v0.3");
+  assert.ok(template, "expected Mistral template to resolve");
+  assert.equal(template.family, "mistral");
+
+  const spec = buildMistralArchitectureSpec({
+    modelId: template.modelId,
+    numHiddenLayers: template.defaultBlockCount,
+    vocabSize: template.overrides?.vocabSize,
+    hiddenSize: template.overrides?.hiddenSize,
+    intermediateSize: template.overrides?.intermediateSize,
+    numAttentionHeads: template.overrides?.numAttentionHeads,
+    numKeyValueHeads: template.overrides?.numKeyValueHeads,
+    headDim: template.overrides?.headDim,
+    maxPositionEmbeddings: template.overrides?.maxPositionEmbeddings,
+    rmsNormEpsilon: template.overrides?.rmsNormEpsilon,
+    ropeTheta: template.overrides?.ropeTheta,
+    tieWordEmbeddings: template.overrides?.tieWordEmbeddings
+  });
+  assert.equal(spec.family, "mistral");
+  assert.equal(spec.config.hiddenSize, 4096);
+  assert.equal(spec.config.intermediateSize, 14336);
+  assert.equal(spec.config.numHiddenLayers, 32);
+  assert.equal(spec.config.numAttentionHeads, 32);
+  assert.equal(spec.config.numKeyValueHeads, 8);
+  assert.equal(spec.config.headDim, 128);
+  assert.equal(spec.config.vocabSize, 32768);
+  assert.equal(spec.config.maxPositionEmbeddings, 32768);
+  assert.equal(spec.config.ropeTheta, 1000000);
+
+  const graph = projectMistralIrToModelGraph(spec);
+  assert.equal(graph.nodes.filter((node) => node.type === "MistralBlock").length, 32);
+  assert.equal(graph.nodes.find((node) => node.type === "MistralTokenEmbedding")?.config.embeddingDim, 4096);
+}
+
+function testMistralConfigImportProducesExpectedIr(): void {
+  const mistral = mapMistralConfigToIr(
+    {
+      model_type: "mistral",
+      vocab_size: 32768,
+      hidden_size: 4096,
+      intermediate_size: 14336,
+      num_hidden_layers: 32,
+      num_attention_heads: 32,
+      num_key_value_heads: 8,
+      head_dim: 128,
+      hidden_act: "silu",
+      max_position_embeddings: 32768,
+      rms_norm_eps: 1e-5,
+      rope_theta: 1000000,
+      attention_bias: false,
+      attention_dropout: 0,
+      mlp_bias: false,
+      tie_word_embeddings: false,
+      sliding_window: null
+    },
+    { modelId: "mistralai/Mistral-7B-Instruct-v0.3", name: "Mistral import" }
+  );
+  assert.equal(mistral.family, "mistral");
+  assert.equal(mistral.config.hiddenSize, 4096);
+  assert.equal(mistral.config.intermediateSize, 14336);
+  assert.equal(mistral.config.numHiddenLayers, 32);
+  assert.equal(mistral.config.numAttentionHeads, 32);
+  assert.equal(mistral.config.numKeyValueHeads, 8);
+  assert.equal(mistral.config.headDim, 128);
+  assert.equal(mistral.config.maxPositionEmbeddings, 32768);
+  assert.equal(mistral.config.ropeTheta, 1000000);
+  assert.equal(mistral.config.slidingWindow, null);
+}
+
 function testGemma4ConfigImportProducesExpectedIr(): void {
   const gemma = mapGemma4ConfigToIr(
     {
@@ -1186,6 +1262,18 @@ function testGemma4ProjectExportUsesDedicatedFamilyPath(): void {
   assert.ok(files["src/kurra_ai_cb/model.py"]?.includes("def build_model(cfg, seq_len_override: int | None = None) -> Gemma4ForCausalLM:"));
 }
 
+function testMistralProjectExportUsesDedicatedFamilyPath(): void {
+  const spec = buildMistralArchitectureSpec({ numHiddenLayers: 2 });
+  const modelPy = exportMistralIrToPyTorch(spec);
+  const files = exportMistralIrProjectFiles(spec, { ...defaultTraining });
+  assert.ok(modelPy.includes("class MistralConfig:"));
+  assert.ok(modelPy.includes("class MistralModel(nn.Module):"));
+  assert.ok(modelPy.includes("class MistralForCausalLM(nn.Module):"));
+  assert.ok(modelPy.includes("sliding_window: int | None = None"));
+  assert.ok(files["configs/model.yaml"]?.includes("model_family: mistral"));
+  assert.ok(files["src/kurra_ai_cb/model.py"]?.includes("def build_model(cfg, seq_len_override: int | None = None) -> MistralForCausalLM:"));
+}
+
 function testExactGemma4GraphMapsToDedicatedFamily(): void {
   const spec = buildGemma4ArchitectureSpec({ numHiddenLayers: 2, headDim: 256 });
   const graph = projectGemma4IrToModelGraph(spec);
@@ -1197,6 +1285,16 @@ function testExactGemma4GraphMapsToDedicatedFamily(): void {
   assert.equal(remapped.config.slidingWindow, 1024);
   assert.equal(remapped.config.numGlobalKeyValueHeads, 4);
   assert.equal(remapped.config.globalHeadDim, 512);
+}
+
+function testExactMistralGraphMapsToDedicatedFamily(): void {
+  const spec = buildMistralArchitectureSpec({ numHiddenLayers: 2 });
+  const graph = projectMistralIrToModelGraph(spec);
+  const remapped = mapModelGraphToMistralIr(graph);
+  assert.equal(remapped.family, "mistral");
+  assert.equal(remapped.config.numHiddenLayers, 2);
+  assert.equal(remapped.config.numKeyValueHeads, 8);
+  assert.equal(remapped.config.headDim, 128);
 }
 
 function testPhi3ProjectExportUsesDedicatedFamilyPath(): void {
@@ -1406,6 +1504,11 @@ function testGeneratedPythonCompilesForSupportedExports(): void {
   compilePythonSource("llama_model.py", exportLlamaIrToPyTorch(llamaSpec));
   compilePythonSource("llama_train_script.py", llamaFiles["scripts/train.py"]);
 
+  const mistralSpec = buildMistralArchitectureSpec({ numHiddenLayers: 2 });
+  const mistralFiles = exportMistralIrProjectFiles(mistralSpec, { ...defaultTraining });
+  compilePythonSource("mistral_model.py", exportMistralIrToPyTorch(mistralSpec));
+  compilePythonSource("mistral_train_script.py", mistralFiles["scripts/train.py"]);
+
   const hybridGraph = buildHybridGraph();
   const hybridSpec = mapModelGraphToHybridIr(hybridGraph);
   const hybridFiles = exportHybridIrProjectFiles(hybridSpec, hybridGraph.training);
@@ -1511,6 +1614,10 @@ const tests: TestCase[] = [
     run: testPhi35MiniTemplateUsesDedicatedFamilyDefaults
   },
   {
+    name: "Mistral template uses the dedicated Mistral family defaults",
+    run: testMistralTemplateUsesDedicatedFamilyDefaults
+  },
+  {
     name: "Gemma 4 template uses the dedicated Gemma 4 family defaults",
     run: testGemma4TemplateUsesDedicatedFamilyDefaults
   },
@@ -1519,8 +1626,16 @@ const tests: TestCase[] = [
     run: testPhi3ProjectExportUsesDedicatedFamilyPath
   },
   {
+    name: "Mistral config import produces the expected IR",
+    run: testMistralConfigImportProducesExpectedIr
+  },
+  {
     name: "Gemma 4 config import produces the expected IR",
     run: testGemma4ConfigImportProducesExpectedIr
+  },
+  {
+    name: "Mistral project export uses the dedicated family path",
+    run: testMistralProjectExportUsesDedicatedFamilyPath
   },
   {
     name: "Gemma 4 project export uses the dedicated family path",
@@ -1529,6 +1644,10 @@ const tests: TestCase[] = [
   {
     name: "exact Phi-3 graphs map to the dedicated family",
     run: testExactPhi3GraphMapsToDedicatedFamily
+  },
+  {
+    name: "exact Mistral graphs map to the dedicated family",
+    run: testExactMistralGraphMapsToDedicatedFamily
   },
   {
     name: "exact Gemma 4 graphs map to the dedicated family",

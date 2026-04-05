@@ -34,6 +34,23 @@ export function isCustomizedLlamaBlock(block: BlockNode): boolean {
   );
 }
 
+export function isCustomizedMistralBlock(block: BlockNode): boolean {
+  const feedforwardType = String(block.config.feedforwardType ?? "mlp");
+  const activation = String(block.config.activation ?? "silu");
+  const rmsNormEpsilon = Number(block.config.rmsNormEpsilon ?? 1e-5);
+  const attentionBias = Boolean(block.config.attentionBias ?? false);
+  const dropout = Number(block.config.dropout ?? 0);
+  const mlpBias = Boolean(block.config.mlpBias ?? false);
+  return (
+    feedforwardType !== "mlp" ||
+    activation !== "silu" ||
+    rmsNormEpsilon !== 1e-5 ||
+    attentionBias !== false ||
+    dropout !== 0 ||
+    mlpBias !== false
+  );
+}
+
 export function isCustomizedPhi3Block(block: BlockNode): boolean {
   const feedforwardType = String(block.config.feedforwardType ?? "mlp");
   const activation = String(block.config.activation ?? "silu");

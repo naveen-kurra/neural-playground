@@ -198,6 +198,60 @@ export const blockDefinitions: BlockDefinition[] = [
     ]
   },
   {
+    type: "MistralTokenEmbedding",
+    label: "Mistral Token Embedding",
+    category: "embedding",
+    description: "Mistral token embedding table (`embed_tokens`).",
+    inputs: ["tokens"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "tokens",
+        dims: ["seq_len"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    sequenceDimField: "embeddingDim",
+    vocabSizeField: "vocabSize",
+    ruleSpecs: [
+      {
+        code: "invalid_vocab_size",
+        severity: "error",
+        description: "Vocab size must be positive.",
+        kind: "number_gt",
+        field: "vocabSize",
+        min: 0
+      },
+      {
+        code: "invalid_embedding_dim",
+        severity: "error",
+        description: "Embedding dimension must be positive.",
+        kind: "number_gt",
+        field: "embeddingDim",
+        min: 0
+      }
+    ],
+    fields: [
+      {
+        key: "vocabSize",
+        label: "Vocab Size",
+        type: "number",
+        defaultValue: 32768
+      },
+      {
+        key: "embeddingDim",
+        label: "Hidden Size",
+        type: "number",
+        defaultValue: 4096
+      }
+    ]
+  },
+  {
     type: "Gemma4TokenEmbedding",
     label: "Gemma 4 Token Embedding",
     category: "embedding",
@@ -944,6 +998,219 @@ export const blockDefinitions: BlockDefinition[] = [
     ]
   },
   {
+    type: "MistralBlock",
+    label: "Mistral Block",
+    category: "transformer",
+    description: "Mistral decoder block with RMSNorm, RoPE attention, grouped-query attention, and configurable feedforward path.",
+    inputs: ["sequence"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    sequenceDimField: "dModel",
+    ruleSpecs: [
+      {
+        code: "invalid_d_model",
+        severity: "error",
+        description: "Model dimension must be positive.",
+        kind: "number_gt",
+        field: "dModel",
+        min: 0
+      },
+      {
+        code: "invalid_num_heads",
+        severity: "error",
+        description: "Number of heads must be positive.",
+        kind: "number_gt",
+        field: "numHeads",
+        min: 0
+      },
+      {
+        code: "heads_dimension_mismatch",
+        severity: "error",
+        description: "Model dimension must be divisible by the number of heads.",
+        kind: "number_divisible",
+        field: "dModel",
+        otherField: "numHeads"
+      },
+      {
+        code: "invalid_ffn_hidden",
+        severity: "error",
+        description: "MLP hidden dimension must be positive.",
+        kind: "number_gt",
+        field: "ffnHidden",
+        min: 0,
+        when: { field: "feedforwardType", notEquals: "moe" }
+      },
+      {
+        code: "invalid_layer_norm_epsilon",
+        severity: "error",
+        description: "LayerNorm epsilon must be positive.",
+        kind: "number_gt",
+        field: "rmsNormEpsilon",
+        min: 0
+      },
+      {
+        code: "invalid_dropout_range",
+        severity: "error",
+        description: "Dropout must be between 0 and 1.",
+        kind: "number_in_range",
+        field: "dropout",
+        min: 0,
+        max: 1
+      },
+      {
+        code: "invalid_expert_count",
+        severity: "error",
+        description: "MoE requires a positive number of experts when feedforward is set to moe.",
+        kind: "number_gt",
+        field: "numExperts",
+        min: 0,
+        when: { field: "feedforwardType", equals: "moe" }
+      },
+      {
+        code: "invalid_top_k",
+        severity: "error",
+        description: "MoE top-k must be positive and no greater than the number of experts.",
+        kind: "number_lte_field",
+        field: "topK",
+        otherField: "numExperts",
+        min: 0,
+        when: { field: "feedforwardType", equals: "moe" }
+      },
+      {
+        code: "invalid_expert_hidden",
+        severity: "error",
+        description: "MoE expert hidden size must be positive.",
+        kind: "number_gt",
+        field: "expertHidden",
+        min: 0,
+        when: { field: "feedforwardType", equals: "moe" }
+      },
+      {
+        code: "invalid_kv_heads",
+        severity: "error",
+        description: "KV heads must be positive, not exceed attention heads, and divide evenly into attention heads.",
+        kind: "number_lte_and_divides_field",
+        field: "numKeyValueHeads",
+        otherField: "numHeads",
+        min: 0
+      },
+      {
+        code: "head_dim_mismatch",
+        severity: "error",
+        description: "Head dim must equal hidden size divided by attention heads.",
+        kind: "number_equals_floor_div",
+        field: "headDim",
+        otherField: "dModel",
+        divisorField: "numHeads"
+      }
+    ],
+    fields: [
+      {
+        key: "dModel",
+        label: "Hidden Size",
+        type: "number",
+        defaultValue: 4096
+      },
+      {
+        key: "numHeads",
+        label: "Attention Heads",
+        type: "number",
+        defaultValue: 32
+      },
+      {
+        key: "numKeyValueHeads",
+        label: "KV Heads",
+        type: "number",
+        defaultValue: 8
+      },
+      {
+        key: "ffnHidden",
+        label: "Intermediate Size",
+        type: "number",
+        defaultValue: 14336
+      },
+      {
+        key: "feedforwardType",
+        label: "Feedforward",
+        type: "select",
+        defaultValue: "mlp",
+        options: ["mlp", "moe"]
+      },
+      {
+        key: "numExperts",
+        label: "Experts",
+        type: "number",
+        defaultValue: 8
+      },
+      {
+        key: "topK",
+        label: "Top-K",
+        type: "number",
+        defaultValue: 2
+      },
+      {
+        key: "expertHidden",
+        label: "Expert Hidden",
+        type: "number",
+        defaultValue: 14336
+      },
+      {
+        key: "ropeTheta",
+        label: "RoPE Theta",
+        type: "number",
+        defaultValue: 1000000
+      },
+      {
+        key: "headDim",
+        label: "Head Dim",
+        type: "number",
+        defaultValue: 128
+      },
+      {
+        key: "rmsNormEpsilon",
+        label: "RMSNorm Eps",
+        type: "number",
+        defaultValue: 0.00001
+      },
+      {
+        key: "activation",
+        label: "Activation",
+        type: "select",
+        defaultValue: "silu",
+        options: ["silu", "relu", "gelu"]
+      },
+      {
+        key: "attentionBias",
+        label: "Attention Bias",
+        type: "boolean",
+        defaultValue: false
+      },
+      {
+        key: "dropout",
+        label: "Attention Dropout",
+        type: "number",
+        defaultValue: 0
+      },
+      {
+        key: "mlpBias",
+        label: "MLP Bias",
+        type: "boolean",
+        defaultValue: false
+      }
+    ]
+  },
+  {
     type: "Gemma4Block",
     label: "Gemma 4 Block",
     category: "transformer",
@@ -1390,6 +1657,50 @@ export const blockDefinitions: BlockDefinition[] = [
     ]
   },
   {
+    type: "MistralFinalRMSNorm",
+    label: "Mistral Final RMSNorm",
+    category: "normalization",
+    description: "Final Mistral RMSNorm (`norm`).",
+    inputs: ["sequence"],
+    outputs: ["sequence"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    ruleSpecs: [
+      {
+        code: "invalid_layer_norm_epsilon",
+        severity: "error",
+        description: "LayerNorm epsilon must be positive.",
+        kind: "number_gt",
+        field: "epsilon",
+        min: 0
+      },
+      {
+        code: "unknown_layernorm_dim",
+        severity: "warning",
+        description: "Final norm dimension should be inferable from incoming connections.",
+        kind: "sequence_dim_known"
+      }
+    ],
+    fields: [
+      {
+        key: "epsilon",
+        label: "RMSNorm Epsilon",
+        type: "number",
+        defaultValue: 0.00001
+      }
+    ]
+  },
+  {
     type: "Gemma4FinalRMSNorm",
     label: "Gemma 4 Final RMSNorm",
     category: "normalization",
@@ -1570,6 +1881,57 @@ export const blockDefinitions: BlockDefinition[] = [
         label: "Vocab Size",
         type: "number",
         defaultValue: 32000
+      },
+      {
+        key: "tiedWeights",
+        label: "Tie Weights",
+        type: "boolean",
+        defaultValue: false
+      }
+    ]
+  },
+  {
+    type: "MistralLMHead",
+    label: "Mistral LM Head",
+    category: "output",
+    description: "Projects Mistral hidden states to vocabulary logits.",
+    inputs: ["sequence"],
+    outputs: ["logits"],
+    inputContracts: [
+      {
+        kind: "sequence",
+        dims: ["seq_len", "d_model"]
+      }
+    ],
+    outputContracts: [
+      {
+        kind: "logits",
+        dims: ["seq_len", "vocab_size"]
+      }
+    ],
+    vocabSizeField: "vocabSize",
+    ruleSpecs: [
+      {
+        code: "invalid_vocab_size",
+        severity: "error",
+        description: "Vocab size must be positive.",
+        kind: "number_gt",
+        field: "vocabSize",
+        min: 0
+      },
+      {
+        code: "unknown_output_dim",
+        severity: "warning",
+        description: "LM head dimension should be inferable from incoming connections.",
+        kind: "output_dim_known"
+      }
+    ],
+    fields: [
+      {
+        key: "vocabSize",
+        label: "Vocab Size",
+        type: "number",
+        defaultValue: 32768
       },
       {
         key: "tiedWeights",

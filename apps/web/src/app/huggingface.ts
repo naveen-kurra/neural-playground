@@ -2,7 +2,7 @@ export type HuggingFaceFetchResult = {
   modelId: string;
   config: Record<string, unknown>;
   weightIndex: Record<string, unknown> | null;
-  resolvedFamily: "gpt2" | "llama" | "phi3" | "unknown";
+  resolvedFamily: "gpt2" | "llama" | "mistral" | "phi3" | "unknown";
   inspection: HuggingFaceModelInspection;
 };
 
@@ -28,7 +28,7 @@ function getNestedValue(data: Record<string, unknown>, path: string): unknown {
   }, data);
 }
 
-function inferFamily(config: Record<string, unknown>): "gpt2" | "llama" | "phi3" | "unknown" {
+function inferFamily(config: Record<string, unknown>): "gpt2" | "llama" | "mistral" | "phi3" | "unknown" {
   const modelType = String(config.model_type ?? "").toLowerCase();
   if (modelType === "gpt2") {
     return "gpt2";
@@ -36,11 +36,17 @@ function inferFamily(config: Record<string, unknown>): "gpt2" | "llama" | "phi3"
   if (modelType === "llama") {
     return "llama";
   }
+  if (modelType === "mistral") {
+    return "mistral";
+  }
   if (modelType === "phi3" || modelType === "phi-3") {
     return "phi3";
   }
 
   const architectures = Array.isArray(config.architectures) ? config.architectures.map((value) => String(value).toLowerCase()) : [];
+  if (architectures.some((value) => value.includes("mistral"))) {
+    return "mistral";
+  }
   if (architectures.some((value) => value.includes("phi3") || value.includes("phi-3"))) {
     return "phi3";
   }

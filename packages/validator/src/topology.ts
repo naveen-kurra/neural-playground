@@ -23,6 +23,7 @@ export function validateTopology(graph: ModelGraph, mode: ValidationMode): Valid
     node.type === "Embedding" ||
     node.type === "GPT2TokenEmbedding" ||
     node.type === "LlamaTokenEmbedding" ||
+    node.type === "MistralTokenEmbedding" ||
     node.type === "Phi3TokenEmbedding" ||
     node.type === "Gemma4TokenEmbedding"
   );
@@ -229,6 +230,7 @@ function isEmbeddingStage(type: ModelGraph["nodes"][number]["type"]): boolean {
     type === "Embedding" ||
     type === "GPT2TokenEmbedding" ||
     type === "LlamaTokenEmbedding" ||
+    type === "MistralTokenEmbedding" ||
     type === "Phi3TokenEmbedding" ||
     type === "Gemma4TokenEmbedding" ||
     type === "GPT2PositionEmbedding"
@@ -242,6 +244,7 @@ function isHiddenStage(type: ModelGraph["nodes"][number]["type"]): boolean {
     type === "TransformerBlock" ||
     type === "GPT2Block" ||
     type === "LlamaBlock" ||
+    type === "MistralBlock" ||
     type === "Phi3Block" ||
     type === "Gemma4Block" ||
     type === "MoE" ||
@@ -249,6 +252,7 @@ function isHiddenStage(type: ModelGraph["nodes"][number]["type"]): boolean {
     type === "LayerNorm" ||
     type === "GPT2FinalLayerNorm" ||
     type === "LlamaFinalRMSNorm" ||
+    type === "MistralFinalRMSNorm" ||
     type === "Phi3FinalRMSNorm" ||
     type === "Gemma4FinalRMSNorm"
   );
@@ -258,6 +262,7 @@ function isOutputStage(type: ModelGraph["nodes"][number]["type"]): boolean {
   return (
     type === "GPT2LMHead" ||
     type === "LlamaLMHead" ||
+    type === "MistralLMHead" ||
     type === "Phi3LMHead" ||
     type === "Gemma4LMHead" ||
     type === "Softmax" ||

@@ -1,4 +1,4 @@
-export type ModelFamily = "gpt2" | "llama" | "phi3" | "gemma4";
+export type ModelFamily = "gpt2" | "llama" | "mistral" | "phi3" | "gemma4";
 
 export type Modality = "text";
 
@@ -217,6 +217,15 @@ export type Phi3BlockOp = LlamaBlockOp;
 export type Phi3FinalNormOp = LlamaFinalNormOp;
 export type Phi3LmHeadOp = LlamaLmHeadOp;
 export type Phi3Operator = LlamaOperator;
+
+export type MistralEmbeddingOp = LlamaEmbeddingOp;
+export type MistralAttentionOp = LlamaAttentionOp;
+export type MistralMlpOp = LlamaMlpOp;
+export type MistralRmsNormOp = LlamaRmsNormOp;
+export type MistralBlockOp = LlamaBlockOp;
+export type MistralFinalNormOp = LlamaFinalNormOp;
+export type MistralLmHeadOp = LlamaLmHeadOp;
+export type MistralOperator = LlamaOperator;
 
 export type Gemma4EmbeddingOp = LlamaEmbeddingOp;
 export type Gemma4AttentionOp = LlamaAttentionOp;
@@ -457,6 +466,41 @@ export type LlamaArchitectureSpec = {
   operators: LlamaOperator[];
 };
 
+export type MistralArchitectureSpec = {
+  family: "mistral";
+  modality: "text";
+  task: "causal_lm";
+  name: string;
+  source?: {
+    kind: "manual" | "huggingface-config";
+    modelId?: string;
+  };
+  config: {
+    vocabSize: number;
+    hiddenSize: number;
+    intermediateSize: number;
+    numHiddenLayers: number;
+    numAttentionHeads: number;
+    numKeyValueHeads: number;
+    headDim: number;
+    hiddenActivation: string;
+    maxPositionEmbeddings: number;
+    rmsNormEpsilon: number;
+    ropeTheta: number;
+    attentionBias: boolean;
+    attentionDropout: number;
+    mlpBias: boolean;
+    tieWordEmbeddings: boolean;
+    slidingWindow: number | null;
+  };
+  tensors: {
+    inputTokens: TensorRef;
+    hiddenStates: TensorRef[];
+    logits: TensorRef;
+  };
+  operators: MistralOperator[];
+};
+
 export type Phi3ArchitectureSpec = {
   family: "phi3";
   modality: "text";
@@ -562,4 +606,10 @@ export type HybridDecoderArchitectureSpec = {
   };
 };
 
-export type ArchitectureSpec = GPT2ArchitectureSpec | LlamaArchitectureSpec | Phi3ArchitectureSpec | Gemma4ArchitectureSpec | HybridDecoderArchitectureSpec;
+export type ArchitectureSpec =
+  | GPT2ArchitectureSpec
+  | LlamaArchitectureSpec
+  | MistralArchitectureSpec
+  | Phi3ArchitectureSpec
+  | Gemma4ArchitectureSpec
+  | HybridDecoderArchitectureSpec;

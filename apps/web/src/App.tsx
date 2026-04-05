@@ -9,6 +9,8 @@ import {
   exportHybridIrToPyTorch,
   exportLlamaIrProjectFiles,
   exportLlamaIrToPyTorch,
+  exportMistralIrProjectFiles,
+  exportMistralIrToPyTorch,
   exportPhi3IrProjectFiles,
   exportPhi3IrToPyTorch,
   exportModelGraphToPyTorch,
@@ -18,13 +20,16 @@ import {
   buildGemma4ArchitectureSpec,
   buildGPT2ArchitectureSpec,
   buildLlamaArchitectureSpec,
+  buildMistralArchitectureSpec,
   buildPhi3ArchitectureSpec,
   mapModelGraphToGemma4Ir,
   mapModelGraphToGPT2Ir,
   mapModelGraphToHybridIr,
   mapModelGraphToLlamaIr,
+  mapModelGraphToMistralIr,
   mapModelGraphToPhi3Ir,
   projectGemma4IrToModelGraph,
+  projectMistralIrToModelGraph,
   projectPhi3IrToModelGraph,
   projectGPT2IrToModelGraph,
   projectLlamaIrToModelGraph
@@ -241,6 +246,14 @@ export function App() {
     }
   }, [graph]);
 
+  const mistralIr = useMemo(() => {
+    try {
+      return { ok: true as const, value: mapModelGraphToMistralIr(graph) };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "Unknown Mistral mapping error" };
+    }
+  }, [graph]);
+
   const hybridIr = useMemo(() => {
     try {
       return { ok: true as const, value: mapModelGraphToHybridIr(graph) };
@@ -269,7 +282,7 @@ export function App() {
   // Specialized IRs (GPT-2, LLaMA, Hybrid) have their own embedding/topology rules
   // so generic "pytorch-export-valid" checks would produce false positives on them.
   const displayIssues = useMemo(() => {
-    if (gpt2Ir.ok || llamaIr.ok || phi3Ir.ok || gemma4Ir.ok || hybridIr.ok) return issues;
+    if (gpt2Ir.ok || llamaIr.ok || mistralIr.ok || phi3Ir.ok || gemma4Ir.ok || hybridIr.ok) return issues;
     const exportLevel = validateGraph(graph, "pytorch-export-valid");
     const seen = new Set<string>();
     const merged = [];
@@ -348,7 +361,7 @@ export function App() {
         error: summarizeValidationIssues(universalExportIssues)
       };
     }
-    if (!gpt2Ir.ok && !llamaIr.ok && !phi3Ir.ok && !gemma4Ir.ok && !hybridIr.ok && (!normalizedExportGraph.ok || pytorchExportIssues.length > 0)) {
+    if (!gpt2Ir.ok && !llamaIr.ok && !mistralIr.ok && !phi3Ir.ok && !gemma4Ir.ok && !hybridIr.ok && (!normalizedExportGraph.ok || pytorchExportIssues.length > 0)) {
       return {
         ok: false,
         error: normalizedExportGraph.ok ? summarizeValidationIssues(pytorchExportIssues) : normalizedExportGraph.error
@@ -361,6 +374,9 @@ export function App() {
       }
       if (llamaIr.ok) {
         return { ok: true, value: exportLlamaIrToPyTorch(llamaIr.value) };
+      }
+      if (mistralIr.ok) {
+        return { ok: true, value: exportMistralIrToPyTorch(mistralIr.value) };
       }
       if (phi3Ir.ok) {
         return { ok: true, value: exportPhi3IrToPyTorch(phi3Ir.value) };
@@ -378,7 +394,7 @@ export function App() {
         error: error instanceof Error ? error.message : "Unknown export error"
       };
     }
-  }, [graph, pytorchExportIssues, gpt2Ir, llamaIr, phi3Ir, gemma4Ir, hybridIr, normalizedExportGraph, universalExportIssues]);
+  }, [graph, pytorchExportIssues, gpt2Ir, llamaIr, mistralIr, phi3Ir, gemma4Ir, hybridIr, normalizedExportGraph, universalExportIssues]);
 
   const exportedJson = useMemo(() => JSON.stringify(graph, null, 2), [graph]);
   const exportedProject = useMemo<SafeExport<ReturnType<typeof exportProjectFiles>>>(() => {
@@ -391,7 +407,7 @@ export function App() {
     if (trainingWarnings.length > 0) {
       return { ok: false, error: trainingWarnings[0]! };
     }
-    if (!gpt2Ir.ok && !llamaIr.ok && !phi3Ir.ok && !gemma4Ir.ok && !hybridIr.ok && (!normalizedExportGraph.ok || decoderExportIssues.length > 0)) {
+    if (!gpt2Ir.ok && !llamaIr.ok && !mistralIr.ok && !phi3Ir.ok && !gemma4Ir.ok && !hybridIr.ok && (!normalizedExportGraph.ok || decoderExportIssues.length > 0)) {
       return {
         ok: false,
         error: normalizedExportGraph.ok ? summarizeValidationIssues(decoderExportIssues) : normalizedExportGraph.error
@@ -403,6 +419,9 @@ export function App() {
       }
       if (llamaIr.ok) {
         return { ok: true, value: exportLlamaIrProjectFiles(llamaIr.value, training) };
+      }
+      if (mistralIr.ok) {
+        return { ok: true, value: exportMistralIrProjectFiles(mistralIr.value, training) };
       }
       if (phi3Ir.ok) {
         return { ok: true, value: exportPhi3IrProjectFiles(phi3Ir.value, training) };
@@ -417,7 +436,7 @@ export function App() {
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : "Unknown project export error" };
     }
-  }, [graph, trainingWarnings, decoderExportIssues, gpt2Ir, llamaIr, phi3Ir, gemma4Ir, hybridIr, training, normalizedExportGraph, universalExportIssues]);
+  }, [graph, trainingWarnings, decoderExportIssues, gpt2Ir, llamaIr, mistralIr, phi3Ir, gemma4Ir, hybridIr, training, normalizedExportGraph, universalExportIssues]);
 
   useEffect(() => {
     const template = resolveTemplate(modelTemplateSelection);
@@ -618,6 +637,38 @@ export function App() {
           tieWordEmbeddings: template.overrides?.tieWordEmbeddings
         });
         const importedGraph = projectPhi3IrToModelGraph(spec);
+        setNodes(importedGraph.nodes);
+        setEdges(importedGraph.edges);
+        setTraining(importedGraph.training);
+        historyRef.current = [{ nodes: importedGraph.nodes, edges: importedGraph.edges, training: importedGraph.training }];
+        historyPosRef.current = 0;
+        setHistoryPos(0);
+        setSelected({ kind: "training" });
+        setPendingConnectionSourceId(null);
+        setConnectionError("");
+        setExportPreview(null);
+        setCopyStatus("idle");
+        setProjectStatus(`Loaded ${template.label} template with ${blockCount} block${blockCount === 1 ? "" : "s"}.`);
+        return;
+      }
+
+      if (template.family === "mistral") {
+        const spec = buildMistralArchitectureSpec({
+          name: `${template.label} ${blockCount}-block`,
+          modelId: template.modelId,
+          numHiddenLayers: blockCount,
+          vocabSize: template.overrides?.vocabSize,
+          hiddenSize: template.overrides?.hiddenSize,
+          intermediateSize: template.overrides?.intermediateSize,
+          numAttentionHeads: template.overrides?.numAttentionHeads,
+          numKeyValueHeads: template.overrides?.numKeyValueHeads,
+          headDim: template.overrides?.headDim,
+          maxPositionEmbeddings: template.overrides?.maxPositionEmbeddings,
+          rmsNormEpsilon: template.overrides?.rmsNormEpsilon,
+          ropeTheta: template.overrides?.ropeTheta,
+          tieWordEmbeddings: template.overrides?.tieWordEmbeddings
+        });
+        const importedGraph = projectMistralIrToModelGraph(spec);
         setNodes(importedGraph.nodes);
         setEdges(importedGraph.edges);
         setTraining(importedGraph.training);

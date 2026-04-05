@@ -65,10 +65,16 @@ function inferFamily(config) {
   if (modelType === "llama") {
     return "llama";
   }
+  if (modelType === "mistral") {
+    return "mistral";
+  }
   if (modelType === "phi3" || modelType === "phi-3") {
     return "phi3";
   }
   const architectures = Array.isArray(config?.architectures) ? config.architectures.map((value) => String(value).toLowerCase()) : [];
+  if (architectures.some((value) => value.includes("mistral"))) {
+    return "mistral";
+  }
   if (architectures.some((value) => value.includes("phi3") || value.includes("phi-3"))) {
     return "phi3";
   }

@@ -5,7 +5,7 @@ export function renderNewGeluActivation(): string {
 `;
 }
 
-export function renderActivationRegistry(kind: "gpt2" | "llama" | "phi3", fnName = "get_activation"): string {
+export function renderActivationRegistry(kind: "gpt2" | "llama" | "mistral" | "phi3", fnName = "get_activation"): string {
   if (kind === "gpt2") {
     return `def ${fnName}(name: str) -> nn.Module:
     key = name.lower().strip()

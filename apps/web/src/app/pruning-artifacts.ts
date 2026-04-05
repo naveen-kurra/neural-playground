@@ -6,7 +6,7 @@ export type LayerPruningStrategy = "drop";
 export type PruningManifest = {
   version: 1;
   modelId: string;
-  family: "gpt2" | "llama" | "phi3" | "unknown";
+  family: "gpt2" | "llama" | "mistral" | "phi3" | "unknown";
   layerCountKey: string | null;
   originalLayerCount: number;
   keptLayerIndices: number[];

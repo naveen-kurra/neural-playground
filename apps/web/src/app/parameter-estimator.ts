@@ -107,6 +107,7 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
       case "Embedding":
       case "GPT2TokenEmbedding":
       case "LlamaTokenEmbedding":
+      case "MistralTokenEmbedding":
       case "Phi3TokenEmbedding":
       case "Gemma4TokenEmbedding": {
         vocabSize = num(node.config.vocabSize, vocabSize);
@@ -151,6 +152,7 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
         break;
       }
       case "LlamaBlock":
+      case "MistralBlock":
       case "Phi3Block":
       case "Gemma4Block": {
         const dModel = num(node.config.dModel, hiddenSize);
@@ -158,7 +160,7 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
         const numKvHeads = num(node.config.numKeyValueHeads, numHeads);
         const headDim = num(node.config.headDim, Math.floor(dModel / Math.max(1, numHeads)));
         const feedforwardType = String(node.config.feedforwardType ?? "mlp");
-        const ffnHidden = num(node.config.ffnHidden, node.type === "Phi3Block" ? 8192 : node.type === "Gemma4Block" ? 21504 : dModel * 4);
+        const ffnHidden = num(node.config.ffnHidden, node.type === "MistralBlock" ? 14336 : node.type === "Phi3Block" ? 8192 : node.type === "Gemma4Block" ? 21504 : dModel * 4);
         parameterCount += countLlamaAttention(dModel, numHeads, numKvHeads, headDim, Boolean(node.config.attentionBias ?? false));
         if (feedforwardType === "moe") {
           const expertHidden = num(node.config.expertHidden, ffnHidden);
@@ -180,6 +182,7 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
       case "LayerNorm":
       case "GPT2FinalLayerNorm":
       case "LlamaFinalRMSNorm":
+      case "MistralFinalRMSNorm":
       case "Phi3FinalRMSNorm":
       case "Gemma4FinalRMSNorm": {
         parameterCount += 2 * hiddenSize;
@@ -188,6 +191,7 @@ function estimateGenericGraphParameters(graph: ModelGraph): number {
       }
       case "GPT2LMHead":
       case "LlamaLMHead":
+      case "MistralLMHead":
       case "Phi3LMHead":
       case "Gemma4LMHead": {
         const tiedWeights = Boolean(node.config.tiedWeights ?? false);

@@ -22,7 +22,7 @@ export function NodeInspector(props: NodeInspectorProps) {
       }
     }
 
-    if (node.type === "LlamaBlock" || node.type === "Phi3Block" || node.type === "Gemma4Block") {
+    if (node.type === "LlamaBlock" || node.type === "MistralBlock" || node.type === "Phi3Block" || node.type === "Gemma4Block") {
       if (field.key === "ffnHidden") {
         return feedforwardType !== "moe";
       }

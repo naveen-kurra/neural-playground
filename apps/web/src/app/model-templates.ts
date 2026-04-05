@@ -1,7 +1,7 @@
 export type ModelTemplate = {
   id: string;
   label: string;
-  family: "gpt2" | "llama" | "phi3" | "gemma4";
+  family: "gpt2" | "llama" | "mistral" | "phi3" | "gemma4";
   modelId: string;
   description: string;
   defaultBlockCount: number;
@@ -71,6 +71,26 @@ export const modelTemplates: ModelTemplate[] = [
       globalHeadDim: 512,
       attentionKEqV: false,
       numKvSharedLayers: 0
+    }
+  },
+  {
+    id: "mistral-7b-v0.3",
+    label: "Mistral 7B v0.3",
+    family: "mistral",
+    modelId: "mistralai/Mistral-7B-Instruct-v0.3",
+    description: "Mistral 7B exact-family preset on a dedicated Mistral path.",
+    defaultBlockCount: 32,
+    overrides: {
+      vocabSize: 32768,
+      maxPositionEmbeddings: 32768,
+      hiddenSize: 4096,
+      intermediateSize: 14336,
+      numAttentionHeads: 32,
+      numKeyValueHeads: 8,
+      headDim: 128,
+      rmsNormEpsilon: 1e-5,
+      ropeTheta: 1000000,
+      tieWordEmbeddings: false
     }
   },
   {

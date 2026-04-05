@@ -1,10 +1,18 @@
 import type { ModelGraph } from "@neural-playground/block-schema";
-import { isCustomizedGpt2Block, isCustomizedLlamaBlock, isCustomizedPhi3Block } from "./customization";
+import { isCustomizedGpt2Block, isCustomizedLlamaBlock, isCustomizedMistralBlock, isCustomizedPhi3Block } from "./customization";
 import { buildGPT2ArchitectureSpec, type GPT2ConfigInput } from "./gpt2";
 import { buildGemma4ArchitectureSpec, type Gemma4ConfigInput } from "./gemma4";
 import { buildLlamaArchitectureSpec, type LlamaConfigInput } from "./llama";
+import { buildMistralArchitectureSpec, type MistralConfigInput } from "./mistral";
 import { buildPhi3ArchitectureSpec, type Phi3ConfigInput } from "./phi3";
-import type { Gemma4ArchitectureSpec, GPT2ArchitectureSpec, HybridDecoderArchitectureSpec, LlamaArchitectureSpec, Phi3ArchitectureSpec } from "./types";
+import type {
+  Gemma4ArchitectureSpec,
+  GPT2ArchitectureSpec,
+  HybridDecoderArchitectureSpec,
+  LlamaArchitectureSpec,
+  MistralArchitectureSpec,
+  Phi3ArchitectureSpec
+} from "./types";
 
 function topologicalNodes(graph: ModelGraph) {
   const indegree = new Map<string, number>();
@@ -342,6 +350,35 @@ export function mapLlamaConfigToIr(
   });
 }
 
+export function mapMistralConfigToIr(
+  config: Record<string, unknown>,
+  options: { modelId?: string; name?: string } = {}
+): MistralArchitectureSpec {
+  const hiddenSize = numberField(config.hidden_size) ?? 4096;
+  const numAttentionHeads = numberField(config.num_attention_heads) ?? 32;
+  const numKeyValueHeads = numberField(config.num_key_value_heads) ?? 8;
+  return buildMistralArchitectureSpec({
+    name: options.name ?? "Mistral",
+    modelId: options.modelId,
+    vocabSize: numberField(config.vocab_size) ?? 32768,
+    hiddenSize,
+    intermediateSize: numberField(config.intermediate_size) ?? hiddenSize * 4,
+    numHiddenLayers: numberField(config.num_hidden_layers) ?? 32,
+    numAttentionHeads,
+    numKeyValueHeads,
+    headDim: numberField(config.head_dim) ?? Math.floor(hiddenSize / numAttentionHeads),
+    hiddenActivation: stringField(config.hidden_act) ?? "silu",
+    maxPositionEmbeddings: numberField(config.max_position_embeddings) ?? 32768,
+    rmsNormEpsilon: numberField(config.rms_norm_eps) ?? 1e-5,
+    ropeTheta: numberField(config.rope_theta) ?? 1_000_000,
+    attentionBias: booleanField(config.attention_bias) ?? false,
+    attentionDropout: numberField(config.attention_dropout) ?? 0,
+    mlpBias: booleanField(config.mlp_bias) ?? false,
+    tieWordEmbeddings: booleanField(config.tie_word_embeddings) ?? false,
+    slidingWindow: config.sliding_window === null ? null : numberField(config.sliding_window) ?? null
+  });
+}
+
 export function mapPhi3ConfigToIr(
   config: Record<string, unknown>,
   options: { modelId?: string; name?: string } = {}
@@ -581,6 +618,58 @@ export function mapModelGraphToLlamaIr(graph: ModelGraph): LlamaArchitectureSpec
     maxPositionEmbeddings: Number(inputNode.config.sequenceLength ?? 2048),
     rmsNormEpsilon: Number(firstBlock?.config.rmsNormEpsilon ?? finalNormNode.config.epsilon ?? 1e-6),
     ropeTheta: Number(firstBlock?.config.ropeTheta ?? 10000),
+    attentionBias: Boolean(firstBlock?.config.attentionBias ?? false),
+    attentionDropout: Number(firstBlock?.config.dropout ?? 0),
+    mlpBias: Boolean(firstBlock?.config.mlpBias ?? false),
+    tieWordEmbeddings: Boolean(lmHeadNode.config.tiedWeights ?? false),
+    modelId: undefined
+  });
+}
+
+export function mapModelGraphToMistralIr(graph: ModelGraph): MistralArchitectureSpec {
+  const ordered = topologicalNodes(graph);
+  const exactTypes = ["Input", "MistralTokenEmbedding", "MistralBlock", "MistralFinalRMSNorm", "MistralLMHead", "Output"];
+  const invalidTypes = ordered.filter((node) => !exactTypes.includes(node.type));
+  if (invalidTypes.length > 0) {
+    throw new Error(`Mistral IR mapping only supports ${exactTypes.join(", ")}. Found ${invalidTypes[0]!.type}.`);
+  }
+
+  const inputNode = ordered.find((node) => node.type === "Input");
+  const embeddingNode = ordered.find((node) => node.type === "MistralTokenEmbedding");
+  const finalNormNode = ordered.find((node) => node.type === "MistralFinalRMSNorm");
+  const lmHeadNode = ordered.find((node) => node.type === "MistralLMHead");
+  const outputNode = ordered.find((node) => node.type === "Output");
+  const blocks = ordered.filter((node) => node.type === "MistralBlock");
+
+  if (!inputNode || !embeddingNode || !finalNormNode || !lmHeadNode || !outputNode) {
+    throw new Error(
+      "Exact Mistral projection is incomplete. Expected Input, MistralTokenEmbedding, MistralBlock*, MistralFinalRMSNorm, MistralLMHead, and Output."
+    );
+  }
+
+  if (String(outputNode.config.headType ?? "LanguageModel") !== "LanguageModel") {
+    throw new Error("Mistral IR mapping requires Output head type LanguageModel.");
+  }
+
+  const hiddenSize = Number(embeddingNode.config.embeddingDim ?? 4096);
+  const firstBlock = blocks[0];
+  if (blocks.some(isCustomizedMistralBlock)) {
+    throw new Error("Customized Mistral block internals are not yet exported through the exact path.");
+  }
+
+  return buildMistralArchitectureSpec({
+    name: "Mistral (exact canvas)",
+    vocabSize: Number(embeddingNode.config.vocabSize ?? lmHeadNode.config.vocabSize ?? 32768),
+    hiddenSize,
+    intermediateSize: Number(firstBlock?.config.ffnHidden ?? hiddenSize * 4),
+    numHiddenLayers: blocks.length,
+    numAttentionHeads: Number(firstBlock?.config.numHeads ?? 32),
+    numKeyValueHeads: Number(firstBlock?.config.numKeyValueHeads ?? 8),
+    headDim: Number(firstBlock?.config.headDim ?? Math.floor(hiddenSize / Number(firstBlock?.config.numHeads ?? 32))),
+    hiddenActivation: String(firstBlock?.config.activation ?? normalizeActivationName(graph.training.activation)),
+    maxPositionEmbeddings: Number(inputNode.config.sequenceLength ?? 32768),
+    rmsNormEpsilon: Number(firstBlock?.config.rmsNormEpsilon ?? finalNormNode.config.epsilon ?? 1e-5),
+    ropeTheta: Number(firstBlock?.config.ropeTheta ?? 1_000_000),
     attentionBias: Boolean(firstBlock?.config.attentionBias ?? false),
     attentionDropout: Number(firstBlock?.config.dropout ?? 0),
     mlpBias: Boolean(firstBlock?.config.mlpBias ?? false),
@@ -910,6 +999,109 @@ export function projectLlamaIrToModelGraph(spec: LlamaArchitectureSpec): ModelGr
     },
     { id: "edge-llama-lm-head", source: finalNormNode.id, target: lmHeadNode.id },
     { id: "edge-llama-output", source: lmHeadNode.id, target: outputNode.id }
+  ];
+
+  return {
+    nodes,
+    edges,
+    training: {
+      optimizer: "AdamW",
+      loss: "CrossEntropy",
+      learningRate: 0.0003,
+      activation: spec.config.hiddenActivation.toLowerCase() === "silu" ? "SiLU" : "Custom",
+      optimizerCustomName: "",
+      lossCustomName: "",
+      activationCustomName: spec.config.hiddenActivation.toLowerCase() === "silu" ? "" : spec.config.hiddenActivation
+    }
+  };
+}
+
+export function projectMistralIrToModelGraph(spec: MistralArchitectureSpec): ModelGraph {
+  const inputNode = {
+    id: "Input-mistral",
+    type: "Input" as const,
+    position: { x: 40, y: 92 },
+    config: {
+      sequenceLength: spec.config.maxPositionEmbeddings
+    }
+  };
+
+  const embeddingNode = {
+    id: "MistralTokenEmbedding-mistral",
+    type: "MistralTokenEmbedding" as const,
+    position: { x: 300, y: 92 },
+    config: {
+      vocabSize: spec.config.vocabSize,
+      embeddingDim: spec.config.hiddenSize
+    }
+  };
+
+  const blockNodes = Array.from({ length: spec.config.numHiddenLayers }, (_, index) => ({
+    id: `MistralBlock-mistral-${index}`,
+    type: "MistralBlock" as const,
+    position: { x: 580 + index * 240, y: 92 + (index % 2) * 72 },
+    config: {
+      dModel: spec.config.hiddenSize,
+      numHeads: spec.config.numAttentionHeads,
+      numKeyValueHeads: spec.config.numKeyValueHeads,
+      headDim: spec.config.headDim,
+      ffnHidden: spec.config.intermediateSize,
+      feedforwardType: "mlp",
+      numExperts: 8,
+      topK: 2,
+      expertHidden: spec.config.intermediateSize,
+      ropeTheta: spec.config.ropeTheta,
+      rmsNormEpsilon: spec.config.rmsNormEpsilon,
+      activation: spec.config.hiddenActivation,
+      attentionBias: spec.config.attentionBias,
+      dropout: spec.config.attentionDropout,
+      mlpBias: spec.config.mlpBias
+    }
+  }));
+
+  const finalNormNode = {
+    id: "MistralFinalRMSNorm-mistral",
+    type: "MistralFinalRMSNorm" as const,
+    position: { x: 580 + spec.config.numHiddenLayers * 240, y: 92 },
+    config: {
+      epsilon: spec.config.rmsNormEpsilon
+    }
+  };
+
+  const lmHeadNode = {
+    id: "MistralLMHead-mistral",
+    type: "MistralLMHead" as const,
+    position: { x: 820 + spec.config.numHiddenLayers * 240, y: 92 },
+    config: {
+      vocabSize: spec.config.vocabSize,
+      tiedWeights: spec.config.tieWordEmbeddings
+    }
+  };
+
+  const outputNode = {
+    id: "Output-mistral",
+    type: "Output" as const,
+    position: { x: 1060 + spec.config.numHiddenLayers * 240, y: 92 },
+    config: {
+      headType: "LanguageModel"
+    }
+  };
+
+  const nodes = [inputNode, embeddingNode, ...blockNodes, finalNormNode, lmHeadNode, outputNode];
+  const edges = [
+    { id: "edge-mistral-1", source: inputNode.id, target: embeddingNode.id },
+    ...blockNodes.map((node, index) => ({
+      id: `edge-mistral-block-${index + 1}`,
+      source: index === 0 ? embeddingNode.id : blockNodes[index - 1]!.id,
+      target: node.id
+    })),
+    {
+      id: "edge-mistral-final-norm",
+      source: blockNodes.length > 0 ? blockNodes[blockNodes.length - 1]!.id : embeddingNode.id,
+      target: finalNormNode.id
+    },
+    { id: "edge-mistral-lm-head", source: finalNormNode.id, target: lmHeadNode.id },
+    { id: "edge-mistral-output", source: lmHeadNode.id, target: outputNode.id }
   ];
 
   return {
