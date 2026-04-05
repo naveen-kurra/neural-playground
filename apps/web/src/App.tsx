@@ -436,11 +436,27 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    function isEditableTarget(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+      if (target.isContentEditable) {
+        return true;
+      }
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        return true;
+      }
+      return target.closest(".cm-editor") !== null;
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
       const ctrl = event.metaKey || event.ctrlKey;
       if (!ctrl) return;
-      if (event.key === "z" && !event.shiftKey) { event.preventDefault(); undo(); }
-      else if ((event.key === "z" && event.shiftKey) || event.key === "y") { event.preventDefault(); redo(); }
+      if (isEditableTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) { event.preventDefault(); undo(); }
+      else if ((key === "z" && event.shiftKey) || key === "y") { event.preventDefault(); redo(); }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);

@@ -8,3 +8,4 @@ coverage/
 apps/prune-service/base_conf.json
 playwright-report/
 test-results/
+.venv-prune/
