@@ -1,78 +1,12 @@
 # Neural Playground
 
-Visual neural architecture builder for decoder-first transformer experimentation, learning, and PyTorch project export.
+Visual transformer architecture builder with exact-family editing, PyTorch export, full-project export, and local checkpoint pruning.
 
-## What It Does
+## How To Use The Website
 
-Neural Playground lets users:
+Typical builder flow:
 
-- add and connect architecture blocks on a visual canvas
-- drag nodes and inspect block parameters
-- configure training settings like optimizer, loss, activation, and learning rate
-- define custom hook names for optimizer, loss, and activation flows
-- validate graph structure and dimension-related issues
-- save and load graph projects as JSON
-- export generated `model.py`
-- export a full starter PyTorch project scaffold
-
-## Current Product Scope
-
-The current app is intentionally focused on a decoder-first path.
-
-Supported blocks:
-
-- `Input`
-- `Embedding`
-- `TransformerBlock`
-- `MLP`
-- `LayerNorm`
-- `Softmax`
-- `Output`
-
-Supported presets:
-
-- `Small GPT`
-- `Decoder Block`
-- `Text LM Starter`
-
-Supported export path:
-
-- decoder-oriented PyTorch model export
-- decoder-oriented starter training project export
-- custom hook stub generation for:
-  - activation
-  - loss
-  - optimizer
-
-## Current Limits
-
-This is not an arbitrary neural graph compiler yet.
-
-Current constraints:
-
-- export assumes an acyclic graph
-- export assumes exactly one `Input`
-- export assumes exactly one `Embedding`
-- export assumes exactly one `Output`
-- full project export assumes decoder-style training
-- full project export requires `Output.headType = LanguageModel`
-- multi-branch execution is not compiled as true graph execution
-- browser-side training is not part of this version
-
-The validator supports multiple validation modes, and export now uses stricter mode checks before allowing generated artifacts.
-
-## Repo Shape
-
-```text
-apps/web                  React app for the visual builder
-packages/block-schema     Shared block types, contracts, and block definitions
-packages/ir-schema        Exact internal architecture representation for supported families
-packages/validator        Graph, topology, and dimension validation
-packages/exporter-pytorch Graph-to-PyTorch and project export logic
-docs                      Product and implementation notes
-```
-
-## Local Setup
+1. start the frontend
 
 ```bash
 cd /home/naveen/neural-playground
@@ -80,49 +14,314 @@ npm install
 npm run dev:web
 ```
 
-Then open the local Vite URL, usually `http://localhost:5173`.
+2. open the app in your browser, usually:
 
-## Quality Checks
+```text
+http://127.0.0.1:5173
+```
+
+3. choose a starting point
+
+- load a built-in template such as:
+  - `GPT-2`
+  - `LLaMA`
+  - `Mistral 7B v0.3`
+  - `Phi-3 Mini`
+  - `Gemma 4 31B`
+- or start from the default graph and add blocks manually
+
+4. edit the architecture
+
+- drag blocks on the canvas
+- click a block to edit its parameters in the inspector
+- connect blocks by using the canvas connection flow
+- use exact-family blocks when you want exact-family export
+
+5. watch validation
+
+- invalid graphs are shown in the validation panel
+- export is blocked when the graph is structurally invalid
+- common issues like cycles, wrong arity, and invalid output paths are surfaced before export
+
+6. export artifacts
+
+- `Graph JSON` for save/share/load
+- `PyTorch Model` for generated `model.py`
+- `Full Project` for a runnable starter training project
+
+7. load saved work later
+
+- use `Save` to download a project file
+- use `Load` to restore a saved project or raw graph JSON
+
+Typical pruning flow:
+
+1. start the prune service in another terminal
+
+```bash
+cd /home/naveen/neural-playground
+npm run dev:prune-service
+```
+
+2. open the pruning page in the app
+
+3. enter a Hugging Face model id
+
+- example:
+  - `microsoft/Phi-3-mini-4k-instruct`
+  - `mistralai/Mistral-7B-Instruct-v0.3`
+
+4. inspect metadata
+
+- the app fetches config + weight-index metadata
+- it detects the transformer layer prefix and layer count
+- it tells you whether broad block pruning is supported
+
+5. choose blocks to keep or drop
+
+6. run local prune
+
+- the backend downloads the model snapshot if needed
+- rewrites config and weights
+- validates original and pruned model load
+- reports memory usage deltas
+
+7. review the output path and validation report
+
+## Current Scope
+
+Supported exact families:
+
+- `GPT-2`
+- `LLaMA`
+- `Phi-3`
+  - `Phi-3 Mini`
+  - `Phi-3 Medium`
+  - `Phi-3.5 Mini` preset on the same core family path
+- `Gemma 4` text
+- `Mistral`
+
+Supported product capabilities:
+
+- canvas-based architecture editing
+- exact-family template import
+- graph save/load as project JSON
+- generated `model.py` export
+- full starter PyTorch project export
+- local checkpoint pruning with validation
+- regression and browser test coverage
+
+## Repo Shape
+
+```text
+apps/web                  React/Vite frontend
+apps/prune-service        local Node service for HF inspection + pruning orchestration
+packages/block-schema     block definitions, contracts, defaults
+packages/ir-schema        exact family IR and graph<->IR mappers
+packages/validator        topology, dimension, and export validation
+packages/exporter-pytorch exact-family and generic PyTorch/project exporters
+packages/test-suite       V1 regression suite
+scripts                   parity harnesses, prune runner, setup helpers
+```
+
+## Setup
+
+```bash
+cd /home/naveen/neural-playground
+npm install
+```
+
+If you want pruning support, set up the prune Python env too:
+
+```bash
+npm run setup
+```
+
+## Run The App
+
+Frontend only:
+
+```bash
+npm run dev:web
+```
+
+Then open the local Vite URL, usually `http://127.0.0.1:5173`.
+
+Frontend + pruning backend:
+
+1. configure the prune service token if needed
+
+```bash
+cp apps/prune-service/base_conf.example.json apps/prune-service/base_conf.json
+```
+
+Then edit `apps/prune-service/base_conf.json`:
+
+```json
+{
+  "host": "127.0.0.1",
+  "port": 8787,
+  "hfToken": ""
+}
+```
+
+2. start the prune service
+
+```bash
+npm run dev:prune-service
+```
+
+3. in another terminal, start the web app
+
+```bash
+npm run dev:web
+```
+
+Notes:
+
+- gated Hugging Face models require `hfToken`
+- the prune service calls the local Python runner in `scripts/prune_checkpoint.py`
+- pruning is a local workflow, not a browser-only feature
+
+## Templates
+
+Current built-in templates include:
+
+- `GPT-2`
+- `LLaMA`
+- `Gemma 4 31B`
+- `Mistral 7B v0.3`
+- `Phi-3 Mini`
+- `Phi-3 Medium`
+- `Phi-3.5 Mini`
+
+## Export Workflow
+
+The app can export:
+
+- `Graph JSON`
+- `PyTorch Model`
+- `Full Project`
+
+Full project export includes generated files such as:
+
+- `src/kurra_ai_cb/model.py`
+- `src/kurra_ai_cb/train.py`
+- `configs/model.yaml`
+- `configs/train.yaml`
+- `scripts/train.py`
+- helper runtime modules
+
+Export is blocked when the graph is structurally invalid.
+
+## Run An Exported Project
+
+From an exported project directory:
+
+```bash
+cd /path/to/exported-project
+PYTHONPATH=src /home/naveen/SecondOrbit-150M/.venv/bin/python scripts/train.py
+```
+
+With token-id shard data:
+
+```bash
+cd /path/to/exported-project
+PYTHONPATH=src /home/naveen/SecondOrbit-150M/.venv/bin/python scripts/train.py \
+  --train-shards-glob "/path/to/train/*.npy" \
+  --val-shards-glob "/path/to/val/*.npy" \
+  --output-dir artifacts/run
+```
+
+If you need CPU-only execution:
+
+```bash
+cd /path/to/exported-project
+CUDA_VISIBLE_DEVICES="" PYTHONPATH=src /home/naveen/SecondOrbit-150M/.venv/bin/python scripts/train.py \
+  --train-shards-glob "/path/to/train/*.npy" \
+  --val-shards-glob "/path/to/val/*.npy" \
+  --output-dir artifacts/run
+```
+
+## Pruning Workflow
+
+The pruning page can:
+
+- inspect HF model metadata
+- detect repeated transformer layer prefixes
+- choose kept/dropped block indices
+- run local checkpoint rewrite
+- validate original vs pruned model load
+- report memory usage deltas
+
+Current family detection in the pruning inspector includes:
+
+- `gpt2`
+- `llama`
+- `mistral`
+- `phi3`
+
+The pruning backend is still generic block-pruning infrastructure, not family-specific training code.
+
+## Tests
+
+Repo-wide checks:
 
 ```bash
 npm run check
 npm run build
 ```
 
-## Save / Load
+V1 regression suite:
 
-- `Save` downloads a `.project.json` file
-- `Load` restores a previously saved project or raw graph JSON
+```bash
+npm run test:v1
+```
 
-## Export
+Browser/e2e tests:
 
-Artifacts currently available in the app:
+```bash
+npm run test:e2e
+```
 
-- `Graph JSON`
-- `PyTorch Model`
-- `Full Project`
+All tests:
 
-Full project export includes generated files like:
+```bash
+npm run test:all
+```
 
-- `src/kurra_ai_cb/model.py`
-- `configs/model.yaml`
-- `configs/train.yaml`
-- `scripts/train.py`
-- reusable training helpers
-- `CUSTOM_HOOKS.md`
+Playwright starts the web app automatically on `http://127.0.0.1:4173`.
 
-## Custom Hook Workflow
+## Parity Harnesses
 
-If the user selects `Custom` for:
+Family parity scripts live in [`scripts/`](/home/naveen/neural-playground/scripts):
 
-- optimizer
-- loss
-- activation
+- `check_gpt2_parity.py`
+- `check_llama_parity.py`
+- `check_phi3_parity.py`
+- `check_gemma4_parity.py`
+- `check_mistral_parity.py`
 
-the app collects the custom hook name and carries it into exported configs and code stubs. The exported project then tells the user exactly where to implement that custom hook.
+These are used to compare generated exact-family exports against native `transformers` implementations on small configs.
+
+## Product Boundaries
+
+This repo is not an arbitrary graph compiler.
+
+Important current constraints:
+
+- export assumes an acyclic graph
+- exact-family export expects exact family block sets
+- export currently targets decoder-first causal LM flows
+- runtime helpers are training-oriented and minimal
+- exact family support does not imply full HF inference-runtime parity
+  - cache
+  - rolling KV buffers
+  - advanced generation helpers
+  - all model-specific inference APIs
 
 ## Status
 
-This repo is the product codebase.
+This is the main product repo.
 
-`SecondOrbit-150M` is a reference implementation for model/export behavior and reusable training concepts, not the main app itself.
+`SecondOrbit-150M` is a separate reference/training environment used for local validation, parity runs, and exported project execution, not the app itself.
